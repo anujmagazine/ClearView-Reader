@@ -17,33 +17,41 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
   const modelId = "gemini-2.5-flash"; // Use flash for speed and search capability
 
-  // Refined prompt to better handle paywalls by looking for alternative sources
   const prompt = `
-    I need to read the full content of the article located at this URL: ${url}
+    ROLE: You are an advanced Content Retrieval and Reconstruction Agent.
+    GOAL: Provide the user with the *readable content* of the link provided, regardless of paywalls or clutter.
 
-    Your goal is to reconstruct the *full* reading experience, bypassing any paywalls, popups, or login screens by finding the content elsewhere on the web if the direct link is blocked.
+    TARGET URL: ${url}
 
-    Step 1: SEARCH STRATEGY
-    - Search for the specific URL first.
-    - CRITICAL: Search for the *Title* of the article (deduced from the URL slug) to find syndicated versions on free platforms (e.g., MSN, Yahoo Finance, LinkedIn articles, or re-blogs).
-    - Search for "archive.is [URL]" or "cache:[URL]" to find preserved full-text versions.
+    **EXECUTION PROTOCOL:**
+    1.  **Aggressive Search**: Use the 'googleSearch' tool to find the article content.
+        -   Search for the exact URL.
+        -   Search for the *Title* + "full text".
+        -   Search for the *Title* + "archive".
+        -   Search for the *Author* and *Topic* to find cross-posts (e.g., on LinkedIn, Substack, MSN, Yahoo Finance).
+    
+    2.  **Content Synthesis (Crucial)**:
+        -   **Scenario A (Full Text Found)**: If you find the full text in a cache or syndicated copy, format it in clean Markdown.
+        -   **Scenario B (Paywalled)**: If the direct text is blocked, you MUST **reconstruct** the article.
+            -   Combine all search snippets, previews, and your internal knowledge of the specific article/topic.
+            -   **DO NOT** return a short summary.
+            -   **DO NOT** return just the title.
+            -   **GENERATE A FULL-LENGTH ARTICLE** (aim for 800-1500 words) that mirrors the structure, arguments, and depth of the original.
+            -   Use headers, bullet points, and detailed paragraphs.
 
-    Step 2: CONTENT RECONSTRUCTION
-    - If you find the full text (original or syndicated), format it as clean, readable Markdown.
-    - If the text is split across multiple search snippets or pages, stitch it together coherently.
-    - If the article is strictly paywalled and NO full version exists: Write a "Comprehensive Deep-Dive Report". This must be a long-form detailed piece (not a short summary) that covers every single argument, data point, and section of the original article based on all available search data, reviews, and discussion threads.
+    **OUTPUT FORMAT:**
+    Do NOT use JSON. JSON is fragile for long text.
+    Use the following "Frontmatter + Markdown" format strictly:
 
-    Step 3: OUTPUT FORMAT
-    Return the output strictly as a JSON object inside a JSON code block. 
-    Structure:
-    \`\`\`json
-    {
-      "title": "Article Title",
-      "author": "Author Name (or 'Unknown')",
-      "siteName": "Source Website",
-      "content": "# Full Markdown Content Here..."
-    }
-    \`\`\`
+    ---
+    title: [Exact Article Title]
+    author: [Author Name or "Unknown"]
+    siteName: [Publication Name or "Unknown"]
+    ---
+
+    [Insert Full Reconstructed Article Content Here in Markdown]
+    [Do NOT repeat the title as the first header]
+    [Use ## for section headers]
   `;
 
   try {
@@ -52,54 +60,97 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
-        // responseMimeType: "application/json" is NOT supported with googleSearch
       },
     });
 
     let responseText = response.text;
-    if (!responseText) {
-        throw new Error("No content generated");
-    }
 
-    // Manual JSON extraction since we can't use responseMimeType: application/json with tools
-    // 1. Try to find content within ```json ... ``` code blocks
-    const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
-    if (jsonMatch && jsonMatch[1]) {
-        responseText = jsonMatch[1];
-    } else {
-        // 2. Fallback: Try to find the first '{' and last '}'
-        const firstBrace = responseText.indexOf('{');
-        const lastBrace = responseText.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            responseText = responseText.substring(firstBrace, lastBrace + 1);
+    // Fallback: sometimes the model output is in parts and .text getter might miss it if structured weirdly with tools
+    if (!responseText && response.candidates && response.candidates.length > 0) {
+        const parts = response.candidates[0].content?.parts;
+        if (parts) {
+            responseText = parts
+                .filter((p: any) => p.text)
+                .map((p: any) => p.text)
+                .join('');
         }
     }
 
-    let data;
-    try {
-        data = JSON.parse(responseText);
-    } catch (parseError) {
-        console.error("Failed to parse JSON response:", response.text);
-        throw new Error("Failed to parse article data from AI response.");
+    if (!responseText) {
+        console.error("Empty response from Gemini:", JSON.stringify(response, null, 2));
+        throw new Error("AI returned no content. The article might be totally inaccessible.");
     }
 
-    // Extract grounding sources if available
+    // Parse Frontmatter + Markdown
+    // We look for the pattern: --- [metadata] --- [content]
+    // The regex handles potential whitespace around the separators.
+    const frontmatterRegex = /^\s*---\s*([\s\S]*?)\s*---\s*([\s\S]*)$/;
+    const match = responseText.match(frontmatterRegex);
+
+    let title = "Article View";
+    let author = "Unknown";
+    let siteName = "Web";
+    let content = responseText;
+
+    if (match) {
+        const metadataStr = match[1];
+        content = match[2].trim();
+
+        // Simple line parser for YAML-like metadata
+        const getMeta = (key: string) => {
+            const line = metadataStr.split('\n').find(l => l.trim().startsWith(key + ':'));
+            return line ? line.split(':')[1].trim() : null;
+        };
+
+        title = getMeta('title') || title;
+        author = getMeta('author') || author;
+        siteName = getMeta('siteName') || siteName;
+        
+        // Remove quotes if the model added them (e.g. title: "My Title")
+        title = title.replace(/^"|"$/g, '');
+        author = author.replace(/^"|"$/g, '');
+        siteName = siteName.replace(/^"|"$/g, '');
+
+    } else {
+        // Fallback if model ignored the format:
+        // Attempt to clean up if it still sent JSON code blocks by mistake
+        if (content.trim().startsWith('```')) {
+            content = content.replace(/```json|```markdown|```/g, '');
+            // Attempt to recover title if it looks like JSON
+            try {
+                const possibleJson = JSON.parse(content);
+                if (possibleJson.title) title = possibleJson.title;
+                if (possibleJson.content) content = possibleJson.content;
+                if (possibleJson.author) author = possibleJson.author;
+            } catch (e) {
+                // Not JSON, just raw text
+            }
+        } else {
+             // Try to extract a title from the first line if it looks like a header
+             const lines = content.split('\n');
+             if (lines[0].startsWith('# ')) {
+                 title = lines[0].replace('# ', '').trim();
+                 content = lines.slice(1).join('\n').trim();
+             }
+        }
+    }
+
+    // Extract grounding sources
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => {
         return chunk.web ? { title: chunk.web.title, uri: chunk.web.uri } : null;
     }).filter((item: any) => item !== null) || [];
 
     return {
-      title: data.title || "Untitled Article",
-      content: data.content || "Could not retrieve content. Please try a different source.",
-      author: data.author,
-      siteName: data.siteName,
+      title,
+      content,
+      author,
+      siteName,
       url: url,
       sources: sources
     };
 
   } catch (error: any) {
     console.error("Error fetching article:", error);
-    // Enhance error message for the user
     throw new Error(error.message || "Failed to retrieve article. It might be inaccessible.");
   }
 };
