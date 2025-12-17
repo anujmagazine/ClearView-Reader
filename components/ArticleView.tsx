@@ -155,7 +155,18 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
               h1: ({node, ...props}) => <h2 className="text-3xl font-bold mt-12 mb-6" {...props} />,
               h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-10 mb-5" {...props} />,
               p: ({node, ...props}) => <p className="mb-6 leading-8 text-xl" {...props} />,
-              a: ({node, ...props}) => <a className="underline decoration-2 underline-offset-4 opacity-80 hover:opacity-100" {...props} />,
+              a: ({node, ...props}) => (
+                <a 
+                    className={`underline decoration-2 underline-offset-2 transition-colors ${
+                        theme === ReaderTheme.DARK ? 'text-blue-400 decoration-blue-400/30 hover:decoration-blue-400' : 
+                        theme === ReaderTheme.SEPIA ? 'text-sepia-900 decoration-sepia-900/30 hover:decoration-sepia-900 font-medium' : 
+                        'text-blue-700 decoration-blue-700/30 hover:decoration-blue-700'
+                    }`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    {...props} 
+                />
+              ),
               blockquote: ({node, ...props}) => (
                 <blockquote className={`border-l-4 pl-6 italic my-8 ${
                     theme === ReaderTheme.SEPIA ? 'border-sepia-400 text-sepia-800' : 'border-blue-500 opacity-80'

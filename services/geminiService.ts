@@ -38,6 +38,12 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             -   **DO NOT** return just the title.
             -   **GENERATE A FULL-LENGTH ARTICLE** (aim for 800-1500 words) that mirrors the structure, arguments, and depth of the original.
             -   Use headers, bullet points, and detailed paragraphs.
+    
+    3.  **Hyperlink Enrichment (MANDATORY)**:
+        -   The user needs access to referenced tools, studies, and external pages.
+        -   You MUST include relevant **Markdown links** [Link Text](URL) within the body text.
+        -   If the original links are lost, use your Search tool to find the correct homepage or reference URL for tools, people, or concepts mentioned.
+        -   *Example*: "Tools like [Nano Banana](https://...) allow users to..."
 
     **OUTPUT FORMAT:**
     Do NOT use JSON. JSON is fragile for long text.
@@ -50,6 +56,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     ---
 
     [Insert Full Reconstructed Article Content Here in Markdown]
+    [Ensure links are embedded like this: [Link Text](URL)]
     [Do NOT repeat the title as the first header]
     [Use ## for section headers]
   `;
