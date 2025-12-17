@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
-import { ArrowLeft, BookOpen, ExternalLink, MessageSquare } from 'lucide-react';
+import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
+import { saveArticleToSheet } from '../services/sheetService';
 
 interface ArticleViewProps {
   article: ArticleData;
@@ -15,6 +16,13 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [isAsking, setIsAsking] = useState(false);
+  
+  // Sheet saving states
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Copy state
+  const [copied, setCopied] = useState(false);
 
   // Theme configuration
   const themeClasses = {
@@ -45,6 +53,31 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     }
   };
 
+  const handleSaveToSheet = async () => {
+    setIsSaving(true);
+    try {
+        await saveArticleToSheet(article);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error: any) {
+        console.error(error);
+        alert("Failed to save to Google Sheet. Ensure popups are allowed and Client ID is configured.");
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+        const textToCopy = `# ${article.title}\n\n${article.content}`;
+        await navigator.clipboard.writeText(textToCopy);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+        console.error('Failed to copy', err);
+    }
+  };
+
   return (
     <div className={`min-h-screen transition-colors duration-500 ${themeClasses[theme]}`}>
       {/* Navbar for Reader */}
@@ -63,8 +96,24 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
           
           <div className="flex items-center space-x-4">
              <button
+                onClick={handleCopy}
+                className={`p-2 rounded-lg transition-colors ${
+                    copied 
+                    ? 'text-green-600 bg-green-50' 
+                    : 'opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                }`}
+                title="Copy Article Markdown"
+             >
+                {copied ? <Check size={20} /> : <Copy size={20} />}
+             </button>
+
+             <button
                 onClick={() => setShowChat(!showChat)}
-                className={`p-2 rounded-lg transition-colors ${showChat ? 'bg-blue-500 text-white' : 'hover:bg-black/5'}`}
+                className={`p-2 rounded-lg transition-colors ${
+                    showChat 
+                    ? 'bg-blue-500 text-white' 
+                    : 'opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                }`}
                 title="Ask AI"
              >
                 <MessageSquare size={20} />
@@ -73,7 +122,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                 href={article.url} 
                 target="_blank" 
                 rel="noreferrer"
-                className="opacity-50 hover:opacity-100 transition-opacity"
+                className="p-2 rounded-lg opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-all"
                 title="Open Original"
              >
                <ExternalLink size={20} />
@@ -85,6 +134,33 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
       <main className="max-w-3xl mx-auto px-6 py-12 animate-fade-in-up">
         {/* Header Info */}
         <header className="mb-12 border-b border-opacity-20 pb-8 border-current">
+          
+          {/* Save to Sheet Button - Placed before Title as requested */}
+          <div className="mb-6">
+            <button
+                onClick={handleSaveToSheet}
+                disabled={isSaving || saveSuccess}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    saveSuccess 
+                        ? 'bg-green-100 text-green-700 border border-green-200'
+                        : theme === ReaderTheme.DARK
+                            ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700'
+                            : 'bg-white hover:bg-gray-50 border border-gray-200 shadow-sm'
+                }`}
+            >
+                {isSaving ? (
+                    <Loader2 size={16} className="animate-spin" />
+                ) : saveSuccess ? (
+                    <Check size={16} />
+                ) : (
+                    <FileSpreadsheet size={16} className="text-green-600" />
+                )}
+                <span>
+                    {isSaving ? 'Saving...' : saveSuccess ? 'Saved to Sheet' : 'Save to Google Sheet'}
+                </span>
+            </button>
+          </div>
+
           <h1 className={`text-4xl md:text-5xl font-serif font-bold mb-6 leading-tight tracking-tight`}>
             {article.title}
           </h1>
