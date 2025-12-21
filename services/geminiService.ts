@@ -15,39 +15,35 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     throw new Error("API Key is missing. Please set process.env.API_KEY.");
   }
 
-  const modelId = "gemini-2.5-flash"; // Use flash for speed and search capability
+  const modelId = "gemini-3-flash-preview"; 
 
   const prompt = `
     ROLE: You are an advanced Content Retrieval and Reconstruction Agent.
-    GOAL: Provide the user with the *readable content* of the link provided, regardless of paywalls or clutter.
+    GOAL: Provide the user with the *readable content* of the link provided, including all text and visual media, regardless of paywalls or clutter.
 
     TARGET URL: ${url}
 
     **EXECUTION PROTOCOL:**
-    1.  **Aggressive Search**: Use the 'googleSearch' tool to find the article content.
+    1.  **Aggressive Search**: Use the 'googleSearch' tool to find the article content and its associated media.
         -   Search for the exact URL.
-        -   Search for the *Title* + "full text".
-        -   Search for the *Title* + "archive".
-        -   Search for the *Author* and *Topic* to find cross-posts (e.g., on LinkedIn, Substack, MSN, Yahoo Finance).
+        -   Search for the *Title* + "full text" + "images".
+        -   Search for the *Author* and *Topic* to find syndicated copies.
     
-    2.  **Content Synthesis (Crucial)**:
-        -   **Scenario A (Full Text Found)**: If you find the full text in a cache or syndicated copy, format it in clean Markdown.
-        -   **Scenario B (Paywalled)**: If the direct text is blocked, you MUST **reconstruct** the article.
-            -   Combine all search snippets, previews, and your internal knowledge of the specific article/topic.
-            -   **DO NOT** return a short summary.
-            -   **DO NOT** return just the title.
-            -   **GENERATE A FULL-LENGTH ARTICLE** (aim for 800-1500 words) that mirrors the structure, arguments, and depth of the original.
-            -   Use headers, bullet points, and detailed paragraphs.
+    2.  **Content Synthesis**:
+        -   **Scenario A (Full Text Found)**: If you find the full text, format it in clean, rich Markdown.
+        -   **Scenario B (Paywalled)**: If direct text is blocked, RECONSTRUCT the article in full depth (800-1500 words) mirroring the original structure.
     
-    3.  **Hyperlink Enrichment (MANDATORY)**:
-        -   The user needs access to referenced tools, studies, and external pages.
-        -   You MUST include relevant **Markdown links** [Link Text](URL) within the body text.
-        -   If the original links are lost, use your Search tool to find the correct homepage or reference URL for tools, people, or concepts mentioned.
-        -   *Example*: "Tools like [Nano Banana](https://...) allow users to..."
+    3.  **Visual Content Integration (MANDATORY)**:
+        -   You MUST identify and include the **Hero/Feature image** of the article.
+        -   Identify and include any **Key Diagrams, Infographics, or Illustrative Photos** mentioned or used in the original content.
+        -   Embed them using Markdown: \`![Alt Text Description](Direct Image URL)\`.
+        -   Prefer high-resolution URLs from the original site or official CDN.
+    
+    4.  **Hyperlink Enrichment**:
+        -   Include relevant **Markdown links** [Link Text](URL) within the body text for tools, studies, or people mentioned.
 
     **OUTPUT FORMAT:**
-    Do NOT use JSON. JSON is fragile for long text.
-    Use the following "Frontmatter + Markdown" format strictly:
+    Do NOT use JSON. Use the following strictly:
 
     ---
     title: [Exact Article Title]
@@ -55,8 +51,10 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     siteName: [Publication Name or "Unknown"]
     ---
 
+    ![Hero Image Description](Hero Image URL)
+
     [Insert Full Reconstructed Article Content Here in Markdown]
-    [Ensure links are embedded like this: [Link Text](URL)]
+    [Include inline images where they contextually fit]
     [Do NOT repeat the title as the first header]
     [Use ## for section headers]
   `;
@@ -72,7 +70,6 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
     let responseText = response.text;
 
-    // Fallback: sometimes the model output is in parts and .text getter might miss it if structured weirdly with tools
     if (!responseText && response.candidates && response.candidates.length > 0) {
         const parts = response.candidates[0].content?.parts;
         if (parts) {
@@ -89,8 +86,6 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     }
 
     // Parse Frontmatter + Markdown
-    // We look for the pattern: --- [metadata] --- [content]
-    // The regex handles potential whitespace around the separators.
     const frontmatterRegex = /^\s*---\s*([\s\S]*?)\s*---\s*([\s\S]*)$/;
     const match = responseText.match(frontmatterRegex);
 
@@ -103,43 +98,25 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
         const metadataStr = match[1];
         content = match[2].trim();
 
-        // Simple line parser for YAML-like metadata
         const getMeta = (key: string) => {
-            const line = metadataStr.split('\n').find(l => l.trim().startsWith(key + ':'));
-            return line ? line.split(':')[1].trim() : null;
+            const line = metadataStr.split('\n').find(l => l.trim().toLowerCase().startsWith(key.toLowerCase() + ':'));
+            return line ? line.split(':').slice(1).join(':').trim() : null;
         };
 
         title = getMeta('title') || title;
         author = getMeta('author') || author;
         siteName = getMeta('siteName') || siteName;
         
-        // Remove quotes if the model added them (e.g. title: "My Title")
         title = title.replace(/^"|"$/g, '');
         author = author.replace(/^"|"$/g, '');
         siteName = siteName.replace(/^"|"$/g, '');
 
     } else {
-        // Fallback if model ignored the format:
-        // Attempt to clean up if it still sent JSON code blocks by mistake
-        if (content.trim().startsWith('```')) {
-            content = content.replace(/```json|```markdown|```/g, '');
-            // Attempt to recover title if it looks like JSON
-            try {
-                const possibleJson = JSON.parse(content);
-                if (possibleJson.title) title = possibleJson.title;
-                if (possibleJson.content) content = possibleJson.content;
-                if (possibleJson.author) author = possibleJson.author;
-            } catch (e) {
-                // Not JSON, just raw text
-            }
-        } else {
-             // Try to extract a title from the first line if it looks like a header
-             const lines = content.split('\n');
-             if (lines[0].startsWith('# ')) {
-                 title = lines[0].replace('# ', '').trim();
-                 content = lines.slice(1).join('\n').trim();
-             }
-        }
+         const lines = content.split('\n');
+         if (lines[0].startsWith('# ')) {
+             title = lines[0].replace('# ', '').trim();
+             content = lines.slice(1).join('\n').trim();
+         }
     }
 
     // Extract grounding sources
@@ -170,7 +147,7 @@ export const askQuestionAboutArticle = async (articleContent: string, question: 
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-flash-preview",
             contents: `
                 Context: The following is the content of an article the user is reading:
                 ---

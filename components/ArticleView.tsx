@@ -61,7 +61,11 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
         setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error: any) {
         console.error(error);
-        alert("Failed to save to Google Sheet. Ensure popups are allowed and Client ID is configured.");
+        if (error.message === 'CANCELLED_BY_USER') {
+            // User cancelled the prompt, do nothing
+            return;
+        }
+        alert("Failed to save to Google Sheet. " + (error.message || "Ensure popups are allowed and Client ID is configured."));
     } finally {
         setIsSaving(false);
     }
