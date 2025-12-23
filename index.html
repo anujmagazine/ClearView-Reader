@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ClearView Reader</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2pdf.js for robust PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -71,6 +73,9 @@
         .prose {
           max-width: 100% !important;
           color: black !important;
+        }
+        .print-hidden {
+            display: none !important;
         }
         /* Ensure background colors don't bleed into print */
         div[class*='bg-'] {
