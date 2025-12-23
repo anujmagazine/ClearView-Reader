@@ -1,3 +1,4 @@
+
 export interface ArticleData {
   title: string;
   content: string; // Markdown content

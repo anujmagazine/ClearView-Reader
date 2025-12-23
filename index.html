@@ -54,6 +54,29 @@
       .animate-fade-in-up {
         animation: fade-in-up 0.5s ease-out forwards;
       }
+
+      /* Print specific overrides */
+      @media print {
+        body {
+          background-color: white !important;
+          color: black !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        main {
+          padding: 0 !important;
+          margin: 0 auto !important;
+          max-width: 100% !important;
+        }
+        .prose {
+          max-width: 100% !important;
+          color: black !important;
+        }
+        /* Ensure background colors don't bleed into print */
+        div[class*='bg-'] {
+          background-color: transparent !important;
+        }
+      }
     </style>
   <script type="importmap">
 {

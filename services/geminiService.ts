@@ -1,20 +1,15 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { ArticleData } from "../types";
 
-const apiKey = process.env.API_KEY || '';
-
-// Initialize the client
-const ai = new GoogleGenAI({ apiKey });
+// Initialize the client strictly following guidelines using process.env.API_KEY directly
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Fetches and reconstructs an article using Gemini with Google Search Grounding.
  * This effectively bypasses friction by finding the content via search index.
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
-  if (!apiKey) {
-    throw new Error("API Key is missing. Please set process.env.API_KEY.");
-  }
-
   const modelId = "gemini-3-flash-preview"; 
 
   const prompt = `
@@ -68,6 +63,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
       },
     });
 
+    // Access text property directly as per guidelines
     let responseText = response.text;
 
     if (!responseText && response.candidates && response.candidates.length > 0) {
@@ -107,11 +103,13 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
         author = getMeta('author') || author;
         siteName = getMeta('siteName') || siteName;
         
+        // Clean quotes
         title = title.replace(/^"|"$/g, '');
         author = author.replace(/^"|"$/g, '');
         siteName = siteName.replace(/^"|"$/g, '');
 
     } else {
+         // Fallback if formatting failed but content is there
          const lines = content.split('\n');
          if (lines[0].startsWith('# ')) {
              title = lines[0].replace('# ', '').trim();
@@ -119,7 +117,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
          }
     }
 
-    // Extract grounding sources
+    // Extract grounding sources as required by Google Search grounding guidelines
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => {
         return chunk.web ? { title: chunk.web.title, uri: chunk.web.uri } : null;
     }).filter((item: any) => item !== null) || [];
@@ -143,8 +141,6 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
  * Chat with the article content.
  */
 export const askQuestionAboutArticle = async (articleContent: string, question: string): Promise<string> => {
-    if (!apiKey) return "API Key missing";
-
     try {
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",

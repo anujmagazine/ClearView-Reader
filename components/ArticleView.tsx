@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
-import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy } from 'lucide-react';
+import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
 import { saveArticleToSheet } from '../services/sheetService';
 
@@ -62,10 +62,9 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     } catch (error: any) {
         console.error(error);
         if (error.message === 'CANCELLED_BY_USER') {
-            // User cancelled the prompt, do nothing
             return;
         }
-        alert("Failed to save to Google Sheet. " + (error.message || "Ensure popups are allowed and Client ID is configured."));
+        alert("Failed to save to Google Sheet. " + (error.message || "Ensure popups are allowed."));
     } finally {
         setIsSaving(false);
     }
@@ -82,10 +81,41 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     }
   };
 
+  /**
+   * Triggers the browser print dialog. 
+   * Most modern browsers allow "Save as PDF" within this dialog.
+   */
+  const handleExportPDF = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 1. Ensure the window has focus (critical for some iframe-based previews)
+    window.focus();
+
+    // 2. Prepare the filename by changing the document title
+    const originalTitle = document.title;
+    try {
+      const words = (article.title || 'Article').split(/\s+/).filter(w => w.length > 0);
+      document.title = words.slice(0, 6).join(' ');
+      
+      // 3. Trigger the native print dialog
+      // This is the most reliable "Export to PDF" strategy on the web.
+      window.print();
+    } catch (err) {
+      console.error("Print failed", err);
+      alert("Print dialog could not be opened. Check if your browser is blocking popups/dialogs.");
+    } finally {
+      // 4. Restore the original title after a short delay
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 1000);
+    }
+  };
+
   return (
-    <div className={`min-h-screen transition-colors duration-500 ${themeClasses[theme]}`}>
+    <div className={`min-h-screen transition-colors duration-500 ${themeClasses[theme]} print:bg-white print:text-black`}>
       {/* Navbar for Reader */}
-      <div className={`sticky top-0 z-20 backdrop-blur-md border-b ${
+      <div className={`sticky top-0 z-20 backdrop-blur-md border-b print:hidden ${
           theme === ReaderTheme.DARK ? 'border-gray-800 bg-gray-900/80' : 
           theme === ReaderTheme.SEPIA ? 'border-sepia-200 bg-sepia-50/80' : 'border-gray-200 bg-white/80'
       }`}>
@@ -98,7 +128,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
             <span>Back</span>
           </button>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 md:space-x-4">
              <button
                 onClick={handleCopy}
                 className={`p-2 rounded-lg transition-colors ${
@@ -109,6 +139,14 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                 title="Copy Article Markdown"
              >
                 {copied ? <Check size={20} /> : <Copy size={20} />}
+             </button>
+
+             <button
+                onClick={handleExportPDF}
+                className="p-2 rounded-lg opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                title="Print / Save as PDF"
+             >
+                <Download size={20} />
              </button>
 
              <button
@@ -136,20 +174,26 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
       </div>
 
       <main className="max-w-3xl mx-auto px-6 py-12 animate-fade-in-up">
+        {/* PDF-Only Header (Hidden in Browser) */}
+        <div className="hidden print:block mb-8 pb-4 border-b border-gray-200 text-sm text-blue-600 font-sans break-all">
+          <span className="font-bold text-gray-500 mr-2">Source URL:</span>
+          <span className="underline">{article.url}</span>
+        </div>
+
         {/* Header Info */}
-        <header className="mb-12 border-b border-opacity-20 pb-8 border-current">
+        <header className="mb-12 border-b border-opacity-20 pb-8 border-current print:border-black">
           
-          {/* Save to Sheet Button - Placed before Title as requested */}
-          <div className="mb-6">
+          {/* Action Buttons Row */}
+          <div className="mb-8 flex flex-wrap gap-3 print:hidden">
             <button
                 onClick={handleSaveToSheet}
                 disabled={isSaving || saveSuccess}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer shadow-sm active:scale-95 ${
                     saveSuccess 
                         ? 'bg-green-100 text-green-700 border border-green-200'
                         : theme === ReaderTheme.DARK
-                            ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700'
-                            : 'bg-white hover:bg-gray-50 border border-gray-200 shadow-sm'
+                            ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white'
+                            : 'bg-white hover:bg-gray-50 border border-gray-200 text-gray-700'
                 }`}
             >
                 {isSaving ? (
@@ -163,12 +207,25 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                     {isSaving ? 'Saving...' : saveSuccess ? 'Saved to Sheet' : 'Save to Google Sheet'}
                 </span>
             </button>
+
+            {/* Main Export PDF Button */}
+            <button
+                onClick={handleExportPDF}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer shadow-sm active:scale-95 ${
+                    theme === ReaderTheme.DARK
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white border border-blue-500'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white border border-blue-500'
+                }`}
+            >
+                <Download size={16} />
+                <span>Export as PDF</span>
+            </button>
           </div>
 
-          <h1 className={`text-4xl md:text-5xl font-serif font-bold mb-6 leading-tight tracking-tight`}>
+          <h1 className={`text-4xl md:text-5xl font-serif font-bold mb-6 leading-tight tracking-tight print:text-black`}>
             {article.title}
           </h1>
-          <div className="flex flex-wrap items-center gap-4 text-sm font-medium opacity-70 font-sans uppercase tracking-wider">
+          <div className="flex flex-wrap items-center gap-4 text-sm font-medium opacity-70 font-sans uppercase tracking-wider print:text-gray-600 print:opacity-100">
             {article.author && (
                 <div className="flex items-center">
                     <span>By {article.author}</span>
@@ -180,8 +237,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                     <span>{article.siteName}</span>
                 </>
             )}
-            <span>•</span>
-            <span className="flex items-center gap-1">
+            <span className="print:hidden">•</span>
+            <span className="flex items-center gap-1 print:hidden">
                 <BookOpen size={14} />
                 AI Enhanced
             </span>
@@ -190,7 +247,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
 
         {/* AI Chat Drawer */}
         {showChat && (
-            <div className={`mb-10 p-6 rounded-2xl shadow-lg border ${
+            <div className={`mb-10 p-6 rounded-2xl shadow-lg border print:hidden ${
                 theme === ReaderTheme.DARK ? 'bg-gray-800 border-gray-700' : 
                 theme === ReaderTheme.SEPIA ? 'bg-sepia-100 border-sepia-200' : 'bg-blue-50 border-blue-100'
             }`}>
@@ -229,7 +286,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
         )}
 
         {/* Main Content */}
-        <article className={`prose ${proseClasses[theme]} max-w-none font-serif pb-20`}>
+        <article className={`prose ${proseClasses[theme]} max-w-none font-serif pb-20 print:prose-stone print:text-black print:max-w-full`}>
           <ReactMarkdown 
             components={{
               h1: ({node, ...props}) => <h2 className="text-3xl font-bold mt-12 mb-6" {...props} />,
@@ -241,7 +298,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                         theme === ReaderTheme.DARK ? 'text-blue-400 decoration-blue-400/30 hover:decoration-blue-400' : 
                         theme === ReaderTheme.SEPIA ? 'text-sepia-900 decoration-sepia-900/30 hover:decoration-sepia-900 font-medium' : 
                         'text-blue-700 decoration-blue-700/30 hover:decoration-blue-700'
-                    }`} 
+                    } print:text-black print:no-underline`} 
                     target="_blank" 
                     rel="noopener noreferrer" 
                     {...props} 
@@ -250,11 +307,11 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
               blockquote: ({node, ...props}) => (
                 <blockquote className={`border-l-4 pl-6 italic my-8 ${
                     theme === ReaderTheme.SEPIA ? 'border-sepia-400 text-sepia-800' : 'border-blue-500 opacity-80'
-                }`} {...props} />
+                } print:border-gray-300 print:text-gray-700`} {...props} />
               ),
               img: ({node, ...props}) => (
                  // eslint-disable-next-line jsx-a11y/alt-text
-                 <img className="rounded-xl shadow-md my-8 w-full object-cover max-h-[500px]" {...props} />
+                 <img className="rounded-xl shadow-md my-8 w-full object-cover max-h-[500px] print:shadow-none print:rounded-none" {...props} />
               )
             }}
           >
@@ -264,7 +321,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
 
         {/* Sources Footer */}
         {article.sources && article.sources.length > 0 && (
-            <div className={`mt-12 pt-8 border-t ${theme === ReaderTheme.DARK ? 'border-gray-800' : 'border-gray-200'}`}>
+            <div className={`mt-12 pt-8 border-t print:hidden ${theme === ReaderTheme.DARK ? 'border-gray-800' : 'border-gray-200'}`}>
                 <h4 className="text-sm font-bold uppercase tracking-wider opacity-60 mb-4">Sources Found</h4>
                 <ul className="space-y-2">
                     {article.sources.map((source, idx) => (

@@ -206,7 +206,7 @@ export default function App() {
       </div>
 
       <footer className="p-6 text-center opacity-30 text-xs">
-         <p>Powered by Gemini 2.5 • Designed for clarity</p>
+         <p>Powered by Gemini 3 • Designed for clarity</p>
       </footer>
     </div>
   );
