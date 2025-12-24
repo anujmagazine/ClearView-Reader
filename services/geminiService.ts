@@ -7,51 +7,38 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Fetches and reconstructs an article using Gemini with Google Search Grounding.
- * This effectively bypasses friction by finding the content via search index.
+ * Uses Pro model for better extraction of paywalled content and images.
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
-  const modelId = "gemini-3-flash-preview"; 
+  // Using Pro for better reasoning and higher probability of finding full text and images
+  const modelId = "gemini-3-pro-preview"; 
 
   const prompt = `
-    ROLE: You are an advanced Content Retrieval and Reconstruction Agent.
-    GOAL: Provide the user with the *readable content* of the link provided, including all text and visual media, regardless of paywalls or clutter.
+    ROLE: You are an elite Content Extraction Specialist.
+    GOAL: Reconstruct the full article at the provided URL, bypassing paywalls or login walls by synthesizing data found via Google Search.
 
     TARGET URL: ${url}
 
-    **EXECUTION PROTOCOL:**
-    1.  **Aggressive Search**: Use the 'googleSearch' tool to find the article content and its associated media.
-        -   Search for the exact URL.
-        -   Search for the *Title* + "full text" + "images".
-        -   Search for the *Author* and *Topic* to find syndicated copies.
-    
-    2.  **Content Synthesis**:
-        -   **Scenario A (Full Text Found)**: If you find the full text, format it in clean, rich Markdown.
-        -   **Scenario B (Paywalled)**: If direct text is blocked, RECONSTRUCT the article in full depth (800-1500 words) mirroring the original structure.
-    
-    3.  **Visual Content Integration (MANDATORY)**:
-        -   You MUST identify and include the **Hero/Feature image** of the article.
-        -   Identify and include any **Key Diagrams, Infographics, or Illustrative Photos** mentioned or used in the original content.
-        -   Embed them using Markdown: \`![Alt Text Description](Direct Image URL)\`.
-        -   Prefer high-resolution URLs from the original site or official CDN.
-    
-    4.  **Hyperlink Enrichment**:
-        -   Include relevant **Markdown links** [Link Text](URL) within the body text for tools, studies, or people mentioned.
+    **STRICT CONTENT REQUIREMENTS:**
+    1. **Full Text Reconstruction**: Provide the complete article text. Do not summarize unless the full text is absolutely unavailable. Maintain the original flow, headers, and nuance.
+    2. **Visual Media (MANDATORY)**: 
+       - You MUST identify the primary Hero/Feature image and include it at the top.
+       - You MUST include at least 2-3 inline images or diagrams from the article body if they exist.
+       - Use Markdown: ![Alt text](Direct_Image_URL).
+       - Ensure URLs are direct and publicly accessible (not behind a login).
+    3. **Formatting**: Use clean, rich Markdown. Use ## for headers. Do not include the title inside the markdown body (it's handled by frontmatter).
+    4. **Frontmatter**: Start with a metadata block.
 
     **OUTPUT FORMAT:**
-    Do NOT use JSON. Use the following strictly:
-
     ---
-    title: [Exact Article Title]
-    author: [Author Name or "Unknown"]
-    siteName: [Publication Name or "Unknown"]
+    title: [Article Title]
+    author: [Author Name]
+    siteName: [Publication Name]
     ---
 
-    ![Hero Image Description](Hero Image URL)
+    ![Hero Image Description](Direct Hero Image URL)
 
-    [Insert Full Reconstructed Article Content Here in Markdown]
-    [Include inline images where they contextually fit]
-    [Do NOT repeat the title as the first header]
-    [Use ## for section headers]
+    [Full Article Body in Markdown with inline images]
   `;
 
   try {
@@ -63,7 +50,6 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
       },
     });
 
-    // Access text property directly as per guidelines
     let responseText = response.text;
 
     if (!responseText && response.candidates && response.candidates.length > 0) {
@@ -77,8 +63,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     }
 
     if (!responseText) {
-        console.error("Empty response from Gemini:", JSON.stringify(response, null, 2));
-        throw new Error("AI returned no content. The article might be totally inaccessible.");
+        throw new Error("No content received from AI.");
     }
 
     // Parse Frontmatter + Markdown
@@ -99,41 +84,20 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             return line ? line.split(':').slice(1).join(':').trim() : null;
         };
 
-        title = getMeta('title') || title;
-        author = getMeta('author') || author;
-        siteName = getMeta('siteName') || siteName;
-        
-        // Clean quotes
-        title = title.replace(/^"|"$/g, '');
-        author = author.replace(/^"|"$/g, '');
-        siteName = siteName.replace(/^"|"$/g, '');
-
-    } else {
-         // Fallback if formatting failed but content is there
-         const lines = content.split('\n');
-         if (lines[0].startsWith('# ')) {
-             title = lines[0].replace('# ', '').trim();
-             content = lines.slice(1).join('\n').trim();
-         }
+        title = (getMeta('title') || title).replace(/^"|"$/g, '');
+        author = (getMeta('author') || author).replace(/^"|"$/g, '');
+        siteName = (getMeta('siteName') || siteName).replace(/^"|"$/g, '');
     }
 
-    // Extract grounding sources as required by Google Search grounding guidelines
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => {
         return chunk.web ? { title: chunk.web.title, uri: chunk.web.uri } : null;
     }).filter((item: any) => item !== null) || [];
 
-    return {
-      title,
-      content,
-      author,
-      siteName,
-      url: url,
-      sources: sources
-    };
+    return { title, content, author, siteName, url, sources };
 
   } catch (error: any) {
-    console.error("Error fetching article:", error);
-    throw new Error(error.message || "Failed to retrieve article. It might be inaccessible.");
+    console.error("Gemini Service Error:", error);
+    throw new Error(error.message || "Failed to reconstruct article content.");
   }
 };
 
@@ -145,18 +109,16 @@ export const askQuestionAboutArticle = async (articleContent: string, question: 
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             contents: `
-                Context: The following is the content of an article the user is reading:
+                Context: The following is the content of an article:
                 ---
                 ${articleContent.substring(0, 30000)} 
                 ---
-                
                 User Question: ${question}
-                
-                Answer concisely and helpfully based ONLY on the provided text.
+                Answer concisely based on the text.
             `
         });
         return response.text || "I couldn't generate an answer.";
     } catch (e) {
-        return "Sorry, I encountered an error answering that.";
+        return "Error answering question.";
     }
 };
