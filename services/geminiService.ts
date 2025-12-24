@@ -21,13 +21,14 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
     **STRICT CONTENT REQUIREMENTS:**
     1. **Full Text Reconstruction**: Provide the complete article text. Do not summarize unless the full text is absolutely unavailable. Maintain the original flow, headers, and nuance.
-    2. **Visual Media (MANDATORY)**: 
+    2. **Source Attribution (CRITICAL)**: At the very beginning of the article body (before any other text), include a clear line: "Source: [Original Article Title](${url})".
+    3. **Visual Media (MANDATORY)**: 
        - You MUST identify the primary Hero/Feature image and include it at the top.
        - You MUST include at least 2-3 inline images or diagrams from the article body if they exist.
        - Use Markdown: ![Alt text](Direct_Image_URL).
-       - Ensure URLs are direct and publicly accessible (not behind a login).
-    3. **Formatting**: Use clean, rich Markdown. Use ## for headers. Do not include the title inside the markdown body (it's handled by frontmatter).
-    4. **Frontmatter**: Start with a metadata block.
+       - Ensure URLs are direct, high-quality, and publicly accessible (not behind a login). Use the search tool to find the highest quality image assets for the article.
+    4. **Formatting**: Use clean, rich Markdown. Use ## for headers. Do not include the title inside the markdown body as it's handled by frontmatter.
+    5. **Frontmatter**: Start with a metadata block.
 
     **OUTPUT FORMAT:**
     ---
@@ -37,6 +38,10 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     ---
 
     ![Hero Image Description](Direct Hero Image URL)
+    
+    Source: [Link to Original Article](${url})
+
+    ---
 
     [Full Article Body in Markdown with inline images]
   `;

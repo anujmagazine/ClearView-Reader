@@ -90,16 +90,28 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     const filename = `${article.title.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
     
     const element = articleRef.current;
+    
+    // Use an options object that prioritizes quality and cross-origin images
     const opt = {
-      margin: 0.5,
+      margin: [0.5, 0.5],
       filename: filename,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true, 
+        allowTaint: true,
+        letterRendering: true,
+        logging: false
+      },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
 
     try {
       if (typeof html2pdf !== 'undefined') {
+        // We create a clone of the element to ensure any PDF-specific adjustments don't flicker on screen
+        const clonedElement = element.cloneNode(true) as HTMLElement;
+        // Basic cleanup of cloned element if needed
         await html2pdf().set(opt).from(element).save();
       } else {
         throw new Error("html2pdf library not loaded");
@@ -191,8 +203,17 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                             <div className="my-10 flex flex-col items-center">
                                 <img 
                                     className="rounded-xl shadow-lg w-full max-h-[600px] object-contain bg-gray-50 dark:bg-gray-800" 
-                                    loading="lazy" 
-                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                    loading="lazy"
+                                    crossOrigin="anonymous" 
+                                    onError={(e) => { 
+                                        const img = e.target as HTMLImageElement;
+                                        // Attempt to reload without anonymous if it fails (sometimes CORS is fine but the attribute blocks it)
+                                        if (img.crossOrigin === 'anonymous') {
+                                            img.removeAttribute('crossOrigin');
+                                        } else {
+                                            img.style.display = 'none'; 
+                                        }
+                                    }}
                                     {...props} 
                                 />
                                 {props.alt && <span className="text-sm mt-3 opacity-50 italic">{props.alt}</span>}
