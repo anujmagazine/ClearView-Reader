@@ -1,8 +1,7 @@
-
 import React, { useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
-import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, FileText, Printer } from 'lucide-react';
+import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
 import { saveArticleToSheet } from '../services/sheetService';
 
@@ -79,10 +78,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     window.print();
   };
 
-  /**
-   * PDF Generation Strategy: Use html2pdf for direct file download.
-   * If it hangs, it falls back to native print.
-   */
   const handleExportPDF = async () => {
     if (!articleRef.current) return;
     
@@ -90,28 +85,17 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     const filename = `${article.title.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
     
     const element = articleRef.current;
-    
-    // Use an options object that prioritizes quality and cross-origin images
     const opt = {
       margin: [0.5, 0.5],
       filename: filename,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { 
-        scale: 2, 
-        useCORS: true, 
-        allowTaint: true,
-        letterRendering: true,
-        logging: false
-      },
+      html2canvas: { scale: 2, useCORS: true, allowTaint: true, letterRendering: true },
       jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
 
     try {
       if (typeof html2pdf !== 'undefined') {
-        // We create a clone of the element to ensure any PDF-specific adjustments don't flicker on screen
-        const clonedElement = element.cloneNode(true) as HTMLElement;
-        // Basic cleanup of cloned element if needed
         await html2pdf().set(opt).from(element).save();
       } else {
         throw new Error("html2pdf library not loaded");
@@ -163,10 +147,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                         {isSaving ? <Loader2 size={16} className="animate-spin" /> : saveSuccess ? <Check size={16} /> : <FileSpreadsheet size={16} />}
                         <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved' : 'Add to Sheets'}</span>
                     </button>
-                    <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-50">
-                        {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                        <span>{isExporting ? 'Preparing...' : 'Save as PDF'}</span>
-                    </button>
                 </div>
 
                 <h1 className="text-4xl md:text-5xl font-serif font-bold mb-6 leading-tight tracking-tight print:text-black">
@@ -207,7 +187,6 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                                     crossOrigin="anonymous" 
                                     onError={(e) => { 
                                         const img = e.target as HTMLImageElement;
-                                        // Attempt to reload without anonymous if it fails (sometimes CORS is fine but the attribute blocks it)
                                         if (img.crossOrigin === 'anonymous') {
                                             img.removeAttribute('crossOrigin');
                                         } else {

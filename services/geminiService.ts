@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { ArticleData } from "../types";
 
@@ -10,40 +9,35 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
  * Uses Pro model for better extraction of paywalled content and images.
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
-  // Using Pro for better reasoning and higher probability of finding full text and images
   const modelId = "gemini-3-pro-preview"; 
 
   const prompt = `
     ROLE: You are an elite Content Extraction Specialist.
-    GOAL: Reconstruct the full article at the provided URL, bypassing paywalls or login walls by synthesizing data found via Google Search.
+    GOAL: Reconstruct the full article at the provided URL, bypassing paywalls by synthesizing data found via Google Search.
 
     TARGET URL: ${url}
 
-    **STRICT CONTENT REQUIREMENTS:**
-    1. **Full Text Reconstruction**: Provide the complete article text. Do not summarize unless the full text is absolutely unavailable. Maintain the original flow, headers, and nuance.
-    2. **Source Attribution (CRITICAL)**: At the very beginning of the article body (before any other text), include a clear line: "Source: [Original Article Title](${url})".
-    3. **Visual Media (MANDATORY)**: 
-       - You MUST identify the primary Hero/Feature image and include it at the top.
-       - You MUST include at least 2-3 inline images or diagrams from the article body if they exist.
-       - Use Markdown: ![Alt text](Direct_Image_URL).
-       - Ensure URLs are direct, high-quality, and publicly accessible (not behind a login). Use the search tool to find the highest quality image assets for the article.
-    4. **Formatting**: Use clean, rich Markdown. Use ## for headers. Do not include the title inside the markdown body as it's handled by frontmatter.
-    5. **Frontmatter**: Start with a metadata block.
-
-    **OUTPUT FORMAT:**
+    **MANDATORY OUTPUT FORMAT:**
+    You MUST output a YAML frontmatter block followed by the article content in Markdown.
+    
     ---
-    title: [Article Title]
+    title: [Exact Article Title]
     author: [Author Name]
     siteName: [Publication Name]
     ---
 
-    ![Hero Image Description](Direct Hero Image URL)
-    
-    Source: [Link to Original Article](${url})
+    Source: [Original Article](${url})
 
-    ---
+    ![Feature Image Description](Direct_Public_Image_URL)
 
-    [Full Article Body in Markdown with inline images]
+    [Full Article Body in Markdown with subheaders and inline images]
+
+    **RULES:**
+    1. The "title" in frontmatter must be the actual headline of the article.
+    2. The very first line of the markdown body (after the frontmatter) must be: "Source: [Title](${url})".
+    3. Find and include the primary feature image URL. 
+    4. Ensure images use direct public URLs (no base64, no relative paths). Use the search tool to find actual hosted image assets.
+    5. No conversational filler like "Here is the article". Start immediately with '---'.
   `;
 
   try {
@@ -55,7 +49,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
       },
     });
 
-    let responseText = response.text;
+    let responseText = response.text || "";
 
     if (!responseText && response.candidates && response.candidates.length > 0) {
         const parts = response.candidates[0].content?.parts;
@@ -71,34 +65,69 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
         throw new Error("No content received from AI.");
     }
 
-    // Parse Frontmatter + Markdown
-    const frontmatterRegex = /^\s*---\s*([\s\S]*?)\s*---\s*([\s\S]*)$/;
-    const match = responseText.match(frontmatterRegex);
-
-    let title = "Article View";
+    // Advanced Parsing Logic
+    // 1. Try to find the YAML block
+    const frontmatterMatch = responseText.match(/---([\s\S]*?)---([\s\S]*)/);
+    
+    let title = "";
     let author = "Unknown";
     let siteName = "Web";
     let content = responseText;
 
-    if (match) {
-        const metadataStr = match[1];
-        content = match[2].trim();
+    if (frontmatterMatch) {
+        const metadataStr = frontmatterMatch[1];
+        content = frontmatterMatch[2].trim();
 
         const getMeta = (key: string) => {
-            const line = metadataStr.split('\n').find(l => l.trim().toLowerCase().startsWith(key.toLowerCase() + ':'));
-            return line ? line.split(':').slice(1).join(':').trim() : null;
+            const regex = new RegExp(`^${key}:\\s*(.*)$`, 'mi');
+            const match = metadataStr.match(regex);
+            return match ? match[1].trim() : null;
         };
 
-        title = (getMeta('title') || title).replace(/^"|"$/g, '');
-        author = (getMeta('author') || author).replace(/^"|"$/g, '');
-        siteName = (getMeta('siteName') || siteName).replace(/^"|"$/g, '');
+        title = (getMeta('title') || "").replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+        author = (getMeta('author') || "Unknown").replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+        siteName = (getMeta('siteName') || "Web").replace(/^"|"$/g, '').replace(/^'|'$/g, '');
     }
+
+    // 2. Fallback Title Extraction: If frontmatter failed or title is empty
+    if (!title || title.toLowerCase() === 'article view') {
+        // Look for the first # or ## header in the content
+        const h1Match = content.match(/^#\s+(.*)$/m);
+        const h2Match = content.match(/^##\s+(.*)$/m);
+        if (h1Match) title = h1Match[1].trim();
+        else if (h2Match) title = h2Match[1].trim();
+        else {
+            // Last resort: extract from URL
+            try {
+                const urlObj = new URL(url);
+                const pathParts = urlObj.pathname.split('/').filter(p => p.length > 2);
+                if (pathParts.length > 0) {
+                    title = pathParts[pathParts.length - 1].replace(/-/g, ' ').replace(/\.[^/.]+$/, "");
+                    title = title.charAt(0).toUpperCase() + title.slice(1);
+                } else {
+                    title = urlObj.hostname;
+                }
+            } catch {
+                title = "Untitled Article";
+            }
+        }
+    }
+
+    // Final cleanup of title: remove markdown bold/italics
+    title = title.replace(/[*_#]/g, '').trim();
 
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => {
         return chunk.web ? { title: chunk.web.title, uri: chunk.web.uri } : null;
     }).filter((item: any) => item !== null) || [];
 
-    return { title, content, author, siteName, url, sources };
+    return { 
+        title, 
+        content, 
+        author, 
+        siteName, 
+        url, 
+        sources 
+    };
 
   } catch (error: any) {
     console.error("Gemini Service Error:", error);
