@@ -9,19 +9,30 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
  * Uses Pro model for better extraction of paywalled content and images.
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
+  // Using Pro for superior reasoning and multi-source synthesis capabilities
   const modelId = "gemini-3-pro-preview"; 
 
   const prompt = `
-    ROLE: You are an elite Content Extraction Specialist.
-    GOAL: Reconstruct the full article at the provided URL, bypassing paywalls by synthesizing data found via Google Search.
-
+    ROLE: You are an elite Investigative Content Extraction Specialist.
+    GOAL: Reconstruct the ABSOLUTE FULL article at the provided URL, bypassing strict paywalls (e.g., NYT, The Information, WSJ, Bloomberg).
+    
     TARGET URL: ${url}
+
+    **STRICT BYPASS & RECONSTRUCTION PROTOCOL:**
+    1. DEEP SEARCH: The target URL is likely paywalled. Do NOT rely solely on the content from the target URL. 
+    2. MULTI-SOURCE SYNTHESIS: Use Google Search to find the FULL text. Search for the article's headline and author. Look for:
+       - Syndicated versions on other platforms (e.g., Yahoo, Substack, News aggregators).
+       - Archive snapshots (Archive.is, Wayback Machine).
+       - Detailed snippets and quotes across multiple search results.
+    3. NO TRUNCATION: If the article is 2000 words, reconstruct all 2000 words. Do NOT summarize. Do NOT stop halfway. 
+    4. STITCHING: If you find fragments of the article in different places, stitch them together into a single, continuous, logical narrative.
+    5. QUALITY CHECK: Ensure the text ends with a natural conclusion (e.g., "END", or an author bio). If it feels cut off, find more search results to complete it.
 
     **MANDATORY OUTPUT FORMAT:**
     You MUST output a YAML frontmatter block followed by the article content in Markdown.
     
     ---
-    title: [Exact Article Title]
+    title: [Exact Original Article Headline]
     author: [Author Name]
     siteName: [Publication Name]
     ---
@@ -30,14 +41,13 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
     ![Feature Image Description](Direct_Public_Image_URL)
 
-    [Full Article Body in Markdown with subheaders and inline images]
+    [Full Reconstructed Article Body in Markdown with subheaders and inline images]
 
-    **RULES:**
-    1. The "title" in frontmatter must be the actual headline of the article.
-    2. The very first line of the markdown body (after the frontmatter) must be: "Source: [Title](${url})".
-    3. Find and include the primary feature image URL. 
-    4. Ensure images use direct public URLs (no base64, no relative paths). Use the search tool to find actual hosted image assets.
-    5. No conversational filler like "Here is the article". Start immediately with '---'.
+    **STRICT RULES:**
+    - The "title" in frontmatter must be the exact original headline.
+    - The first line of the body MUST be: "Source: [Title](${url})".
+    - Use actual high-resolution image URLs found via search.
+    - Start immediately with '---'. No preamble.
   `;
 
   try {
@@ -46,6 +56,8 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
+        // Maximize thinking for complex paywall bypass and synthesis
+        thinkingConfig: { thinkingBudget: 8000 }
       },
     });
 
@@ -62,11 +74,10 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     }
 
     if (!responseText) {
-        throw new Error("No content received from AI.");
+        throw new Error("No content received. The paywall may be extremely restrictive.");
     }
 
-    // Advanced Parsing Logic
-    // 1. Try to find the YAML block
+    // Parsing Logic
     const frontmatterMatch = responseText.match(/---([\s\S]*?)---([\s\S]*)/);
     
     let title = "";
@@ -84,36 +95,27 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             return match ? match[1].trim() : null;
         };
 
-        title = (getMeta('title') || "").replace(/^"|"$/g, '').replace(/^'|'$/g, '');
-        author = (getMeta('author') || "Unknown").replace(/^"|"$/g, '').replace(/^'|'$/g, '');
-        siteName = (getMeta('siteName') || "Web").replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+        title = (getMeta('title') || "").replace(/^["']|["']$/g, '');
+        author = (getMeta('author') || "Unknown").replace(/^["']|["']$/g, '');
+        siteName = (getMeta('siteName') || "Web").replace(/^["']|["']$/g, '');
     }
 
-    // 2. Fallback Title Extraction: If frontmatter failed or title is empty
-    if (!title || title.toLowerCase() === 'article view') {
-        // Look for the first # or ## header in the content
+    // Robust Title Fallback
+    if (!title || title.toLowerCase().includes('article view') || title.length < 5) {
         const h1Match = content.match(/^#\s+(.*)$/m);
-        const h2Match = content.match(/^##\s+(.*)$/m);
-        if (h1Match) title = h1Match[1].trim();
-        else if (h2Match) title = h2Match[1].trim();
-        else {
-            // Last resort: extract from URL
-            try {
-                const urlObj = new URL(url);
-                const pathParts = urlObj.pathname.split('/').filter(p => p.length > 2);
-                if (pathParts.length > 0) {
-                    title = pathParts[pathParts.length - 1].replace(/-/g, ' ').replace(/\.[^/.]+$/, "");
-                    title = title.charAt(0).toUpperCase() + title.slice(1);
-                } else {
-                    title = urlObj.hostname;
-                }
-            } catch {
-                title = "Untitled Article";
-            }
+        if (h1Match) {
+          title = h1Match[1].trim();
+        } else {
+          try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname.replace('www.', '');
+            title = `Report from ${domain}`;
+          } catch {
+            title = "Extracted Article";
+          }
         }
     }
 
-    // Final cleanup of title: remove markdown bold/italics
     title = title.replace(/[*_#]/g, '').trim();
 
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => {
@@ -131,7 +133,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
   } catch (error: any) {
     console.error("Gemini Service Error:", error);
-    throw new Error(error.message || "Failed to reconstruct article content.");
+    throw new Error(error.message || "Failed to reconstruct the full article. This source is highly protected.");
   }
 };
 
@@ -148,11 +150,11 @@ export const askQuestionAboutArticle = async (articleContent: string, question: 
                 ${articleContent.substring(0, 30000)} 
                 ---
                 User Question: ${question}
-                Answer concisely based on the text.
+                Answer strictly based on the provided text.
             `
         });
-        return response.text || "I couldn't generate an answer.";
+        return response.text || "No response generated.";
     } catch (e) {
-        return "Error answering question.";
+        return "Error querying article.";
     }
 };
