@@ -1,8 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { ArticleData } from "../types";
 
-// Initialize the client strictly following guidelines using process.env.API_KEY directly
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize the client strictly following guidelines using process.env.GEMINI_API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 /**
  * Fetches and reconstructs an article using Gemini with Google Search Grounding.
@@ -10,23 +10,20 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
   // Using Pro for superior reasoning and multi-source synthesis capabilities
-  const modelId = "gemini-3-pro-preview"; 
+  const modelId = "gemini-3.1-pro-preview"; 
 
   const prompt = `
-    ROLE: You are an elite Investigative Content Extraction Specialist.
-    GOAL: Reconstruct the ABSOLUTE FULL article at the provided URL, bypassing strict paywalls (e.g., NYT, The Information, WSJ, Bloomberg).
+    ROLE: You are an expert Reading Assistance Specialist.
+    GOAL: Provide a clean, full-text, distraction-free version of the article at the provided URL for accessibility purposes.
     
     TARGET URL: ${url}
 
-    **STRICT BYPASS & RECONSTRUCTION PROTOCOL:**
-    1. DEEP SEARCH: The target URL is likely paywalled. Do NOT rely solely on the content from the target URL. 
-    2. MULTI-SOURCE SYNTHESIS: Use Google Search to find the FULL text. Search for the article's headline and author. Look for:
-       - Syndicated versions on other platforms (e.g., Yahoo, Substack, News aggregators).
-       - Archive snapshots (Archive.is, Wayback Machine).
-       - Detailed snippets and quotes across multiple search results.
-    3. NO TRUNCATION: If the article is 2000 words, reconstruct all 2000 words. Do NOT summarize. Do NOT stop halfway. 
-    4. STITCHING: If you find fragments of the article in different places, stitch them together into a single, continuous, logical narrative.
-    5. QUALITY CHECK: Ensure the text ends with a natural conclusion (e.g., "END", or an author bio). If it feels cut off, find more search results to complete it.
+    **INSTRUCTIONS:**
+    1. RESEARCH: Use Google Search to find the full content of the article. Search for the headline and author.
+    2. SYNTHESIS: If the primary URL is restricted, look for syndicated versions, public archives, or detailed excerpts across multiple reliable sources.
+    3. RECONSTRUCTION: Reconstruct the complete article text. Do NOT summarize. Maintain the original structure, headings, and flow.
+    4. ACCURACY: Ensure the text is accurate to the original. If you find multiple fragments, stitch them together logically.
+    5. IMAGES: Identify high-quality, relevant image URLs from the article or related search results to include in the markdown.
 
     **MANDATORY OUTPUT FORMAT:**
     You MUST output a YAML frontmatter block followed by the article content in Markdown.
@@ -51,30 +48,49 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        // Maximize thinking for complex paywall bypass and synthesis
-        thinkingConfig: { thinkingBudget: 8000 }
-      },
-    });
+    let response;
+    try {
+        response = await ai.models.generateContent({
+            model: modelId,
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+                // Maximize thinking for complex synthesis
+                thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+            },
+        });
+    } catch (proError) {
+        console.warn("Pro model failed, falling back to Flash:", proError);
+        response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }]
+            },
+        });
+    }
 
-    let responseText = response.text || "";
-
-    if (!responseText && response.candidates && response.candidates.length > 0) {
-        const parts = response.candidates[0].content?.parts;
-        if (parts) {
-            responseText = parts
-                .filter((p: any) => p.text)
-                .map((p: any) => p.text)
-                .join('');
+    // Check for safety blocks or other finish reasons
+    const candidate = response.candidates?.[0];
+    if (candidate && candidate.finishReason && candidate.finishReason !== 'STOP') {
+        console.warn(`Gemini Finish Reason: ${candidate.finishReason}`);
+        if (candidate.finishReason === 'SAFETY') {
+            throw new Error("Content blocked by safety filters. The article might contain sensitive or restricted material.");
         }
     }
 
+    let responseText = response.text || "";
+
+    if (!responseText && candidate?.content?.parts) {
+        responseText = candidate.content.parts
+            .filter((p: any) => p.text)
+            .map((p: any) => p.text)
+            .join('');
+    }
+
     if (!responseText) {
-        throw new Error("No content received. The paywall may be extremely restrictive.");
+        // If still no text, check if there's a refusal in the parts
+        throw new Error("No content received. The source might be too restrictive or the request was blocked.");
     }
 
     // Parsing Logic
