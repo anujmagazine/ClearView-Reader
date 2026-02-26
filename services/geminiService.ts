@@ -19,11 +19,12 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     TARGET URL: ${url}
 
     **INSTRUCTIONS:**
-    1. RESEARCH: Use Google Search to find the full content of the article. Search for the headline and author.
+    1. RESEARCH: Use Google Search and the provided URL context to find the full content of the article. Search for the headline and author.
     2. SYNTHESIS: If the primary URL is restricted, look for syndicated versions, public archives, or detailed excerpts across multiple reliable sources.
     3. RECONSTRUCTION: Reconstruct the complete article text. Do NOT summarize. Maintain the original structure, headings, and flow.
     4. ACCURACY: Ensure the text is accurate to the original. If you find multiple fragments, stitch them together logically.
     5. IMAGES: Identify high-quality, relevant image URLs from the article or related search results to include in the markdown.
+    6. ACCESSIBILITY: Your primary goal is to make this content accessible to users who have difficulty reading the original source due to clutter, paywalls, or formatting issues.
 
     **MANDATORY OUTPUT FORMAT:**
     You MUST output a YAML frontmatter block followed by the article content in Markdown.
@@ -54,7 +55,8 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             model: modelId,
             contents: prompt,
             config: {
-                tools: [{ googleSearch: {} }],
+                systemInstruction: "You are a specialized reading assistant. Your task is to provide the full text of articles for users with accessibility needs. Use Google Search and URL Context to find the content if the direct link is restricted.",
+                tools: [{ googleSearch: {} }, { urlContext: {} }],
                 // Maximize thinking for complex synthesis
                 thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
             },
@@ -62,10 +64,11 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     } catch (proError) {
         console.warn("Pro model failed, falling back to Flash:", proError);
         response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: "gemini-2.5-flash",
             contents: prompt,
             config: {
-                tools: [{ googleSearch: {} }]
+                systemInstruction: "You are a specialized reading assistant. Your task is to provide the full text of articles for users with accessibility needs.",
+                tools: [{ googleSearch: {} }, { urlContext: {} }]
             },
         });
     }
@@ -75,7 +78,10 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     if (candidate && candidate.finishReason && candidate.finishReason !== 'STOP') {
         console.warn(`Gemini Finish Reason: ${candidate.finishReason}`);
         if (candidate.finishReason === 'SAFETY') {
-            throw new Error("Content blocked by safety filters. The article might contain sensitive or restricted material.");
+            throw new Error("Content blocked by safety filters. This usually happens with sensitive or highly protected material.");
+        }
+        if (candidate.finishReason === 'RECITATION') {
+            throw new Error("The content was blocked due to copyright recitation limits. We are working on a better way to synthesize this.");
         }
     }
 
