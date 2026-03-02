@@ -147,9 +147,15 @@ export default function App() {
 
         {/* Error Message */}
         {appState === AppState.ERROR && (
-           <div className="mt-8 p-4 bg-red-100 text-red-700 rounded-lg max-w-md text-center border border-red-200 animate-fade-in-up">
-              <p className="font-medium">Error processing article</p>
-              <p className="text-sm mt-1 opacity-80">{errorMsg}</p>
+           <div className="mt-8 p-6 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-2xl max-w-md text-center border border-red-200 dark:border-red-900/50 animate-fade-in-up shadow-sm">
+              <p className="font-bold text-lg mb-2">Reading Interrupted</p>
+              <p className="text-sm mb-4 opacity-90 leading-relaxed">{errorMsg}</p>
+              <button 
+                onClick={handleBack}
+                className="text-xs font-bold uppercase tracking-widest px-6 py-2 bg-red-100 dark:bg-red-900/40 rounded-full hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+              >
+                Try Another URL
+              </button>
            </div>
         )}
 

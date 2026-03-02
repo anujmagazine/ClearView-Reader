@@ -14,17 +14,17 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
   const prompt = `
     ROLE: You are an expert Reading Assistance Specialist.
-    GOAL: Provide a clean, full-text, distraction-free version of the article at the provided URL for accessibility purposes.
+    GOAL: Provide a comprehensive, high-fidelity synthesis of the article at the provided URL for accessibility purposes.
     
     TARGET URL: ${url}
 
     **INSTRUCTIONS:**
-    1. RESEARCH: Use Google Search and the provided URL context to find the full content of the article. Search for the headline and author.
-    2. SYNTHESIS: If the primary URL is restricted, look for syndicated versions, public archives, or detailed excerpts across multiple reliable sources.
-    3. RECONSTRUCTION: Reconstruct the complete article text. Do NOT summarize. Maintain the original structure, headings, and flow.
-    4. ACCURACY: Ensure the text is accurate to the original. If you find multiple fragments, stitch them together logically.
+    1. RESEARCH: Use Google Search and the provided URL context to find the full content and context of the article.
+    2. SYNTHESIS: Provide a highly detailed, section-by-section synthesis of the article.
+    3. NO VERBATIM RECITATION: To comply with copyright guidelines, do NOT copy long passages verbatim. Instead, accurately paraphrase the content while maintaining all original information, data, quotes, and nuances.
+    4. STRUCTURE: Maintain the original structure, headings, and logical flow of the article.
     5. IMAGES: Identify high-quality, relevant image URLs from the article or related search results to include in the markdown.
-    6. ACCESSIBILITY: Your primary goal is to make this content accessible to users who have difficulty reading the original source due to clutter, paywalls, or formatting issues.
+    6. ACCESSIBILITY: Your goal is to make this content fully accessible and understandable for users who cannot access the original source.
 
     **MANDATORY OUTPUT FORMAT:**
     You MUST output a YAML frontmatter block followed by the article content in Markdown.
@@ -39,7 +39,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
     ![Feature Image Description](Direct_Public_Image_URL)
 
-    [Full Reconstructed Article Body in Markdown with subheaders and inline images]
+    [Full Detailed Synthesis in Markdown with subheaders and inline images]
 
     **STRICT RULES:**
     - The "title" in frontmatter must be the exact original headline.
@@ -74,14 +74,32 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     }
 
     // Check for safety blocks or other finish reasons
-    const candidate = response.candidates?.[0];
+    let candidate = response.candidates?.[0];
+    
+    // If we hit a recitation block, try one more time with an even stricter synthesis prompt
+    if (candidate && candidate.finishReason === 'RECITATION') {
+        console.warn("Recitation block detected, retrying with strict synthesis prompt...");
+        const strictSynthesisPrompt = prompt + "\n\nCRITICAL: You hit a copyright recitation block. You MUST NOT use verbatim text. Provide a 100% original synthesis and explanation of the article's content, data, and arguments in your own words. Do not copy any sentences directly.";
+        
+        response = await ai.models.generateContent({
+            model: "gemini-3.1-pro-preview",
+            contents: strictSynthesisPrompt,
+            config: {
+                systemInstruction: "You are a specialized reading assistant. Provide a 100% original synthesis of the article to avoid copyright blocks. Do not use verbatim text.",
+                tools: [{ googleSearch: {} }, { urlContext: {} }],
+                thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+            },
+        });
+        candidate = response.candidates?.[0];
+    }
+
     if (candidate && candidate.finishReason && candidate.finishReason !== 'STOP') {
         console.warn(`Gemini Finish Reason: ${candidate.finishReason}`);
         if (candidate.finishReason === 'SAFETY') {
             throw new Error("Content blocked by safety filters. This usually happens with sensitive or highly protected material.");
         }
         if (candidate.finishReason === 'RECITATION') {
-            throw new Error("The content was blocked due to copyright recitation limits. We are working on a better way to synthesize this.");
+            throw new Error("This article is under strict copyright protection. We've attempted to synthesize it, but the protection is too high for a full reconstruction.");
         }
     }
 
