@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
+import Markdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
 import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
@@ -168,16 +168,17 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                         <input type="text" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask Gemini something..." className="flex-1 px-4 py-2 rounded-lg border dark:bg-gray-800 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" />
                         <button type="submit" disabled={isAsking} className="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium">{isAsking ? '...' : 'Ask'}</button>
                     </form>
-                    {answer && <div className="p-4 bg-white dark:bg-gray-800 rounded-lg text-sm shadow-sm prose-sm dark:prose-invert"><ReactMarkdown>{answer}</ReactMarkdown></div>}
+                    {answer && <div className="p-4 bg-white dark:bg-gray-800 rounded-lg text-sm shadow-sm prose-sm dark:prose-invert"><Markdown>{answer}</Markdown></div>}
                 </div>
             )}
 
             {/* Main Article Body */}
             <article className={`prose ${proseClasses[theme]} max-w-none font-serif pb-20 print:text-black print:max-w-full`}>
-                <ReactMarkdown 
+                <Markdown 
                     components={{
-                        h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-10 mb-4" {...props} />,
-                        p: ({node, ...props}) => <p className="mb-6 leading-relaxed text-xl" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-2xl font-serif font-bold mt-10 mb-4" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-xl font-serif font-bold mt-8 mb-3" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-6 leading-relaxed text-xl font-serif" {...props} />,
                         a: ({node, ...props}) => <a className="text-blue-600 dark:text-blue-400 underline" target="_blank" {...props} />,
                         img: ({node, ...props}) => (
                             <div className="my-10 flex flex-col items-center">
@@ -202,7 +203,7 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                     }}
                 >
                     {article.content}
-                </ReactMarkdown>
+                </Markdown>
             </article>
 
             {/* Verification Footer */}

@@ -117,6 +117,9 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
         throw new Error("No content received. The source might be too restrictive or the request was blocked.");
     }
 
+    // Strip markdown code block wrappers if Gemini accidentally added them
+    responseText = responseText.replace(/^```markdown\n?/, '').replace(/```$/, '').trim();
+
     // Parsing Logic
     const frontmatterMatch = responseText.match(/---([\s\S]*?)---([\s\S]*)/);
     
