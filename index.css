@@ -22,3 +22,32 @@ body {
 .prose p {
   @apply leading-relaxed;
 }
+
+/* PDF Export Fixes */
+.pdf-source {
+  background-color: transparent !important;
+}
+
+.pdf-source img {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  max-width: 100% !important;
+}
+
+.pdf-source h1, 
+.pdf-source h2, 
+.pdf-source h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.pdf-source blockquote {
+  break-inside: avoid;
+}
+
+@media print {
+  .pdf-source {
+    background-color: white !important;
+    color: black !important;
+  }
+}

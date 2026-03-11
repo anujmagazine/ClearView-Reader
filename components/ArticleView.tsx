@@ -82,6 +82,22 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
     if (!articleRef.current) return;
     
     setIsExporting(true);
+    
+    // Ensure all images are loaded
+    const images = articleRef.current.getElementsByTagName('img');
+    const promises = Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+    });
+    
+    await Promise.all(promises);
+    
+    // Small delay to ensure rendering is complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     const filename = `${article.title.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
     
     const element = articleRef.current;
@@ -89,7 +105,15 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
       margin: [0.5, 0.5],
       filename: filename,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, allowTaint: true, letterRendering: true },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true, 
+        allowTaint: true, 
+        letterRendering: true,
+        logging: false,
+        scrollX: 0,
+        scrollY: 0
+      },
       jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
@@ -178,7 +202,13 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
                     components={{
                         h2: ({node, ...props}) => <h2 className="text-2xl font-serif font-bold mt-10 mb-4" {...props} />,
                         h3: ({node, ...props}) => <h3 className="text-xl font-serif font-bold mt-8 mb-3" {...props} />,
-                        p: ({node, ...props}) => <p className="mb-6 leading-relaxed text-xl font-serif" {...props} />,
+                        p: ({node, children, ...props}) => {
+                            const hasImage = React.Children.toArray(children).some(
+                                (child) => React.isValidElement(child) && (child as any).type === 'img'
+                            );
+                            if (hasImage) return <div className="mb-6" {...props}>{children}</div>;
+                            return <p className="mb-6 leading-relaxed text-xl font-serif" {...props}>{children}</p>;
+                        },
                         a: ({node, ...props}) => <a className="text-blue-600 dark:text-blue-400 underline" target="_blank" {...props} />,
                         img: ({node, ...props}) => (
                             <div className="my-10 flex flex-col items-center">
