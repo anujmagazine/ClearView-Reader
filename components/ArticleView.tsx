@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import Markdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
-import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer } from 'lucide-react';
+import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer, Bookmark, BookmarkCheck } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
 import { saveArticleToSheet } from '../services/sheetService';
+import { User } from 'firebase/auth';
 
 // Declaring html2pdf for TypeScript since it's loaded via script tag
 declare var html2pdf: any;
@@ -12,9 +13,21 @@ interface ArticleViewProps {
   article: ArticleData;
   theme: ReaderTheme;
   onBack: () => void;
+  user: User | null;
+  isSaved: boolean;
+  onSaveToLibrary: () => void;
+  onRemoveFromLibrary: () => void;
 }
 
-export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack }) => {
+export const ArticleView: React.FC<ArticleViewProps> = ({ 
+  article, 
+  theme, 
+  onBack, 
+  user, 
+  isSaved, 
+  onSaveToLibrary, 
+  onRemoveFromLibrary 
+}) => {
   const [showChat, setShowChat] = useState(false);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -143,6 +156,15 @@ export const ArticleView: React.FC<ArticleViewProps> = ({ article, theme, onBack
           </button>
           
           <div className="flex items-center space-x-1">
+             {user && (
+               <button 
+                 onClick={isSaved ? onRemoveFromLibrary : onSaveToLibrary} 
+                 className={`p-2 rounded-lg transition-colors ${isSaved ? 'text-blue-600' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}
+                 title={isSaved ? "Remove from Read Later" : "Save for Later"}
+               >
+                  {isSaved ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
+               </button>
+             )}
              <button onClick={handleCopy} className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10" title="Copy Text">
                 {copied ? <Check size={20} className="text-green-500" /> : <Copy size={20} />}
              </button>

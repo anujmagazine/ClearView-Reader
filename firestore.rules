@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (Auth UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - lastLogin: number (required)
+    //
+    // Collection: users/{userId}/history
+    // Document ID: historyId
+    // Fields:
+    //   - id: string (required)
+    //   - url: string (required)
+    //   - title: string (required)
+    //   - author: string (optional)
+    //   - siteName: string (optional)
+    //   - timestamp: number (required)
+    //
+    // Collection: users/{userId}/library
+    // Document ID: articleId
+    // Fields:
+    //   - id: string (required)
+    //   - url: string (required)
+    //   - title: string (required)
+    //   - author: string (optional)
+    //   - siteName: string (optional)
+    //   - timestamp: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'lastLogin']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.lastLogin is number;
+    }
+
+    function isValidArticleRecord(data) {
+      return data.keys().hasAll(['url', 'title', 'timestamp']) &&
+             data.url is string && data.url.size() > 0 && data.url.size() < 2048 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+             data.timestamp is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+
+      match /history/{historyId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidArticleRecord(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /library/{articleId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidArticleRecord(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

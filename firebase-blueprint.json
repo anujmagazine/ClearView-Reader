@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Basic information about the user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email", "description": "User's email" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "photoURL": { "type": "string", "description": "User's profile picture URL" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user first logged in" }
+      },
+      "required": ["uid", "email"]
+    },
+    "ArticleRecord": {
+      "title": "Article Record",
+      "description": "An article saved in history or library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ID" },
+        "url": { "type": "string", "description": "Original article URL" },
+        "title": { "type": "string", "description": "Article title" },
+        "author": { "type": "string", "description": "Article author" },
+        "siteName": { "type": "string", "description": "Publication name" },
+        "timestamp": { "type": "number", "description": "When it was added/read" },
+        "isReadLater": { "type": "boolean", "description": "Whether it's in the Read Later list" }
+      },
+      "required": ["url", "title", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile document"
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": "ArticleRecord",
+      "description": "User's reading history"
+    },
+    "/users/{userId}/library/{articleId}": {
+      "schema": "ArticleRecord",
+      "description": "User's Read Later library"
+    }
+  }
+}

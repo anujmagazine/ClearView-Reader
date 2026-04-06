@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, ArrowRight, Book, History, X, Loader2 } from 'lucide-react';
+import { Sparkles, ArrowRight, Book, History, X, Loader2, LogIn, LogOut, Bookmark } from 'lucide-react';
 import { fetchArticleContent } from './services/geminiService';
 import { ArticleData, AppState, ReaderTheme, ReadingHistoryItem } from './types';
 import { ArticleView } from './components/ArticleView';
 import { ThemeToggle } from './components/ThemeToggle';
+import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { collection, query, orderBy, limit, onSnapshot, setDoc, doc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 
 export default function App() {
   const [url, setUrl] = useState('');
@@ -12,28 +15,132 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [theme, setTheme] = useState<ReaderTheme>(ReaderTheme.LIGHT);
   const [history, setHistory] = useState<ReadingHistoryItem[]>([]);
+  const [library, setLibrary] = useState<ReadingHistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
-  // Load history from local storage on mount
+  // Auth listener
   useEffect(() => {
-    const savedHistory = localStorage.getItem('clearview_history');
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
-    }
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setIsAuthReady(true);
+      if (u) {
+        // Sync user profile
+        setDoc(doc(db, 'users', u.uid), {
+          uid: u.uid,
+          email: u.email,
+          displayName: u.displayName,
+          photoURL: u.photoURL,
+          lastLogin: Date.now()
+        }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${u.uid}`));
+        
+        // Sync local history to firestore if any
+        syncLocalToFirestore(u.uid);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
-  const saveToHistory = (article: ArticleData) => {
+  // Firestore listeners
+  useEffect(() => {
+    if (!user) {
+      // Load history from local storage if not logged in
+      const savedHistory = localStorage.getItem('clearview_history');
+      if (savedHistory) {
+        setHistory(JSON.parse(savedHistory));
+      } else {
+        setHistory([]);
+      }
+      setLibrary([]);
+      return;
+    }
+
+    const historyQuery = query(
+      collection(db, 'users', user.uid, 'history'),
+      orderBy('timestamp', 'desc'),
+      limit(30)
+    );
+
+    const libraryQuery = query(
+      collection(db, 'users', user.uid, 'library'),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubHistory = onSnapshot(historyQuery, (snapshot) => {
+      const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReadingHistoryItem));
+      setHistory(items);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/history`));
+
+    const unsubLibrary = onSnapshot(libraryQuery, (snapshot) => {
+      const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ReadingHistoryItem));
+      setLibrary(items);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/library`));
+
+    return () => {
+      unsubHistory();
+      unsubLibrary();
+    };
+  }, [user]);
+
+  const syncLocalToFirestore = async (uid: string) => {
+    const savedHistory = localStorage.getItem('clearview_history');
+    if (!savedHistory) return;
+    
+    try {
+      const localHistory: ReadingHistoryItem[] = JSON.parse(savedHistory);
+      const batch = writeBatch(db);
+      
+      localHistory.forEach(item => {
+        const docRef = doc(db, 'users', uid, 'history', item.id);
+        batch.set(docRef, item);
+      });
+      
+      await batch.commit();
+      localStorage.removeItem('clearview_history');
+    } catch (err) {
+      console.error("Failed to sync local history", err);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error("Login failed", err);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Logout failed", err);
+    }
+  };
+
+  const saveToHistory = async (article: ArticleData) => {
     const newItem: ReadingHistoryItem = {
       id: Date.now().toString(),
       url: article.url,
       title: article.title,
+      author: article.author,
+      siteName: article.siteName,
       timestamp: Date.now()
     };
     
-    // Filter out duplicates and keep last 20
-    const updatedHistory = [newItem, ...history.filter(h => h.url !== article.url)].slice(0, 20);
-    setHistory(updatedHistory);
-    localStorage.setItem('clearview_history', JSON.stringify(updatedHistory));
+    if (user) {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'history', newItem.id), newItem);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/history/${newItem.id}`);
+      }
+    } else {
+      const updatedHistory = [newItem, ...history.filter(h => h.url !== article.url)].slice(0, 20);
+      setHistory(updatedHistory);
+      localStorage.setItem('clearview_history', JSON.stringify(updatedHistory));
+    }
   };
 
   const handleRead = async (inputUrl: string) => {
@@ -66,16 +173,74 @@ export default function App() {
     setUrl('');
   };
 
-  const deleteHistoryItem = (id: string, e: React.MouseEvent) => {
+  const deleteHistoryItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newHistory = history.filter(h => h.id !== id);
-    setHistory(newHistory);
-    localStorage.setItem('clearview_history', JSON.stringify(newHistory));
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'history', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/history/${id}`);
+      }
+    } else {
+      const newHistory = history.filter(h => h.id !== id);
+      setHistory(newHistory);
+      localStorage.setItem('clearview_history', JSON.stringify(newHistory));
+    }
+  };
+
+  const deleteLibraryItem = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'library', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/library/${id}`);
+      }
+    }
+  };
+
+  const saveToLibrary = async (article: ArticleData) => {
+    if (!user) return;
+    const newItem: ReadingHistoryItem = {
+      id: btoa(article.url).substring(0, 20), // Stable ID based on URL
+      url: article.url,
+      title: article.title,
+      author: article.author,
+      siteName: article.siteName,
+      timestamp: Date.now()
+    };
+    
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'library', newItem.id), newItem);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/library/${newItem.id}`);
+    }
+  };
+
+  const removeFromLibrary = async (url: string) => {
+    if (!user) return;
+    const id = btoa(url).substring(0, 20);
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'library', id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/library/${id}`);
+    }
   };
 
   // Render Reading Mode
   if (appState === AppState.READING && articleData) {
-    return <ArticleView article={articleData} theme={theme} onBack={handleBack} />;
+    const isSaved = library.some(item => item.url === articleData.url);
+    return (
+      <ArticleView 
+        article={articleData} 
+        theme={theme} 
+        onBack={handleBack} 
+        user={user}
+        isSaved={isSaved}
+        onSaveToLibrary={() => saveToLibrary(articleData)}
+        onRemoveFromLibrary={() => removeFromLibrary(articleData.url)}
+      />
+    );
   }
 
   // Render Landing/Input Mode
@@ -86,7 +251,20 @@ export default function App() {
     }`}>
       
       {/* Top Bar */}
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-3">
+        {isAuthReady && (
+          user ? (
+            <div className="flex items-center gap-3">
+              <img src={user.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-current opacity-20" />
+              <button onClick={handleLogout} className="text-xs font-bold uppercase tracking-widest opacity-50 hover:opacity-100">Logout</button>
+            </div>
+          ) : (
+            <button onClick={handleLogin} className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-blue-600 text-white px-4 py-2 rounded-full hover:bg-blue-700 transition-colors">
+              <LogIn size={14} />
+              <span>Login</span>
+            </button>
+          )
+        )}
         <ThemeToggle currentTheme={theme} onThemeChange={setTheme} />
       </div>
 
@@ -159,51 +337,99 @@ export default function App() {
            </div>
         )}
 
-        {/* Recent History Toggle */}
+        {/* Recent History & Library Toggles */}
         <div className="mt-16 w-full max-w-2xl animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider opacity-50 hover:opacity-100 transition-opacity mx-auto mb-6"
-          >
-             <History size={16} />
-             <span>Recent Reads</span>
-          </button>
+          <div className="flex items-center justify-center gap-8 mb-6">
+            <button 
+              onClick={() => { setShowHistory(!showHistory); setShowLibrary(false); }}
+              className={`flex items-center gap-2 text-sm font-semibold uppercase tracking-wider transition-opacity ${showHistory ? 'opacity-100 text-blue-600' : 'opacity-50 hover:opacity-100'}`}
+            >
+               <History size={16} />
+               <span>History</span>
+            </button>
+            
+            {user && (
+              <button 
+                onClick={() => { setShowLibrary(!showLibrary); setShowHistory(false); }}
+                className={`flex items-center gap-2 text-sm font-semibold uppercase tracking-wider transition-opacity ${showLibrary ? 'opacity-100 text-blue-600' : 'opacity-50 hover:opacity-100'}`}
+              >
+                 <Bookmark size={16} />
+                 <span>Read Later</span>
+              </button>
+            )}
+          </div>
 
-          {showHistory && (
+          {(showHistory || showLibrary) && (
              <div className={`rounded-xl border overflow-hidden transition-all ${
                  theme === ReaderTheme.DARK ? 'border-gray-700 bg-gray-800/50' : 
                  theme === ReaderTheme.SEPIA ? 'border-sepia-200 bg-sepia-100/50' : 'border-gray-200 bg-white'
              }`}>
-                {history.length === 0 ? (
-                    <div className="p-8 text-center opacity-40">No history yet</div>
-                ) : (
-                    <div className="divide-y divide-opacity-10 divide-current max-h-60 overflow-y-auto">
-                        {history.map((item) => (
-                            <div 
-                                key={item.id}
-                                onClick={() => handleRead(item.url)}
-                                className={`p-4 flex items-center justify-between group cursor-pointer ${
-                                    theme === ReaderTheme.DARK ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
-                                }`}
-                            >
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="p-2 rounded-lg bg-current opacity-5">
-                                        <Book size={16} />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="font-medium truncate">{item.title}</p>
-                                        <p className="text-xs opacity-50 truncate">{item.url}</p>
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={(e) => deleteHistoryItem(item.id, e)}
-                                    className="p-2 rounded-full opacity-0 group-hover:opacity-50 hover:!opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                {showHistory && (
+                  history.length === 0 ? (
+                      <div className="p-8 text-center opacity-40">No history yet</div>
+                  ) : (
+                      <div className="divide-y divide-opacity-10 divide-current max-h-60 overflow-y-auto">
+                          {history.map((item) => (
+                              <div 
+                                  key={item.id}
+                                  onClick={() => handleRead(item.url)}
+                                  className={`p-4 flex items-center justify-between group cursor-pointer ${
+                                      theme === ReaderTheme.DARK ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                                  }`}
+                              >
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                      <div className="p-2 rounded-lg bg-current opacity-5">
+                                          <Book size={16} />
+                                      </div>
+                                      <div className="min-w-0">
+                                          <p className="font-medium truncate">{item.title}</p>
+                                          <p className="text-xs opacity-50 truncate">{item.url}</p>
+                                      </div>
+                                  </div>
+                                  <button 
+                                      onClick={(e) => deleteHistoryItem(item.id, e)}
+                                      className="p-2 rounded-full opacity-0 group-hover:opacity-50 hover:!opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
+                                  >
+                                      <X size={14} />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  )
+                )}
+
+                {showLibrary && (
+                  library.length === 0 ? (
+                      <div className="p-8 text-center opacity-40">Your library is empty</div>
+                  ) : (
+                      <div className="divide-y divide-opacity-10 divide-current max-h-60 overflow-y-auto">
+                          {library.map((item) => (
+                              <div 
+                                  key={item.id}
+                                  onClick={() => handleRead(item.url)}
+                                  className={`p-4 flex items-center justify-between group cursor-pointer ${
+                                      theme === ReaderTheme.DARK ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                                  }`}
+                              >
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                      <div className="p-2 rounded-lg bg-current opacity-5 text-blue-600">
+                                          <Bookmark size={16} />
+                                      </div>
+                                      <div className="min-w-0">
+                                          <p className="font-medium truncate">{item.title}</p>
+                                          <p className="text-xs opacity-50 truncate">{item.url}</p>
+                                      </div>
+                                  </div>
+                                  <button 
+                                      onClick={(e) => deleteLibraryItem(item.id, e)}
+                                      className="p-2 rounded-full opacity-0 group-hover:opacity-50 hover:!opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
+                                  >
+                                      <X size={14} />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  )
                 )}
              </div>
           )}

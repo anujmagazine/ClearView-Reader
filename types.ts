@@ -30,4 +30,14 @@ export interface ReadingHistoryItem {
   url: string;
   title: string;
   timestamp: number;
+  author?: string;
+  siteName?: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
+  createdAt: number;
 }
