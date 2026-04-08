@@ -292,6 +292,7 @@ export default function App() {
         onSaveToLibrary={() => saveToLibrary(articleData)}
         onRemoveFromLibrary={() => removeFromLibrary(articleData.url)}
         onShare={() => handleShare(articleData)}
+        onLogin={handleLogin}
       />
     );
   }

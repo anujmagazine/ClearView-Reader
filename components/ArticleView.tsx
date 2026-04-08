@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import Markdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
-import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer, Bookmark, BookmarkCheck, Share2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer, Bookmark, BookmarkCheck, Share2, LogIn } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
 import { saveArticleToSheet } from '../services/sheetService';
 import { User } from 'firebase/auth';
@@ -19,6 +19,7 @@ interface ArticleViewProps {
   onSaveToLibrary: () => void;
   onRemoveFromLibrary: () => void;
   onShare: () => Promise<string | null>;
+  onLogin: () => void;
 }
 
 export const ArticleView: React.FC<ArticleViewProps> = ({ 
@@ -30,7 +31,8 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
   isSharedView = false,
   onSaveToLibrary, 
   onRemoveFromLibrary,
-  onShare
+  onShare,
+  onLogin
 }) => {
   const [showChat, setShowChat] = useState(false);
   const [question, setQuestion] = useState('');
@@ -99,6 +101,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
   };
 
   const handleShare = async () => {
+    if (!user) {
+      alert("Please login to share articles publicly.");
+      return;
+    }
     if (isSharing) return;
     setIsSharing(true);
     const url = await onShare();
@@ -113,6 +119,18 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
       }
     }
     setIsSharing(false);
+  };
+
+  const handleSaveToggle = () => {
+    if (!user) {
+      alert("Please login to save articles to your library.");
+      return;
+    }
+    if (isSaved) {
+      onRemoveFromLibrary();
+    } else {
+      onSaveToLibrary();
+    }
   };
 
   const handleExportPDF = async () => {
@@ -180,25 +198,37 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
           </button>
           
           <div className="flex items-center space-x-1">
-             {user && !isSharedView && (
+             {!user && (
+               <button 
+                 onClick={onLogin}
+                 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-blue-600 text-white px-3 py-1.5 rounded-full hover:bg-blue-700 transition-colors mr-2"
+               >
+                 <LogIn size={14} />
+                 <span className="hidden sm:inline">Login</span>
+               </button>
+             )}
+             {user && (
+               <div className="flex items-center gap-2 mr-2 opacity-50">
+                 <img src={user.photoURL || ''} alt="" className="w-6 h-6 rounded-full border border-current opacity-20" />
+               </div>
+             )}
+             {!isSharedView && (
                <button 
                  onClick={handleShare}
                  disabled={isSharing}
-                 className={`p-2 rounded-lg transition-colors ${shareSuccess ? 'text-green-500' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}
-                 title="Share Public Link"
+                 className={`p-2 rounded-lg transition-colors ${shareSuccess ? 'text-green-500' : 'hover:bg-black/5 dark:hover:bg-white/10'} ${!user ? 'opacity-40' : ''}`}
+                 title={user ? "Share Public Link" : "Login to share"}
                >
                   {isSharing ? <Loader2 size={20} className="animate-spin" /> : shareSuccess ? <Check size={20} /> : <Share2 size={20} />}
                </button>
              )}
-             {user && (
-               <button 
-                 onClick={isSaved ? onRemoveFromLibrary : onSaveToLibrary} 
-                 className={`p-2 rounded-lg transition-colors ${isSaved ? 'text-blue-600' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}
-                 title={isSaved ? "Remove from Read Later" : "Save for Later"}
-               >
-                  {isSaved ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
-               </button>
-             )}
+             <button 
+               onClick={handleSaveToggle} 
+               className={`p-2 rounded-lg transition-colors ${isSaved ? 'text-blue-600' : 'hover:bg-black/5 dark:hover:bg-white/10'} ${!user ? 'opacity-40' : ''}`}
+               title={!user ? "Login to save" : isSaved ? "Remove from Read Later" : "Save for Later"}
+             >
+                {isSaved ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
+             </button>
              <button onClick={handleCopy} className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10" title="Copy Text">
                 {copied ? <Check size={20} className="text-green-500" /> : <Copy size={20} />}
              </button>
