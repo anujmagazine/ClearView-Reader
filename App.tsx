@@ -6,7 +6,7 @@ import { ArticleView } from './components/ArticleView';
 import { ThemeToggle } from './components/ThemeToggle';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, orderBy, limit, onSnapshot, setDoc, doc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, setDoc, doc, deleteDoc, getDocs, writeBatch, getDoc, addDoc } from 'firebase/firestore';
 
 export default function App() {
   const [url, setUrl] = useState('');
@@ -20,6 +20,53 @@ export default function App() {
   const [showLibrary, setShowLibrary] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isSharedView, setIsSharedView] = useState(false);
+
+  // Check for shared article on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('shareId');
+    if (shareId) {
+      loadSharedArticle(shareId);
+    }
+  }, []);
+
+  const loadSharedArticle = async (id: string) => {
+    setAppState(AppState.LOADING);
+    try {
+      const docRef = doc(db, 'shared_articles', id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data() as ArticleData;
+        setArticleData(data);
+        setIsSharedView(true);
+        setAppState(AppState.READING);
+      } else {
+        setErrorMsg("Shared article not found.");
+        setAppState(AppState.ERROR);
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Failed to load shared article.");
+      setAppState(AppState.ERROR);
+    }
+  };
+
+  const handleShare = async (article: ArticleData) => {
+    if (!user) return null;
+    try {
+      const docRef = await addDoc(collection(db, 'shared_articles'), {
+        ...article,
+        sharedBy: user.uid,
+        timestamp: Date.now()
+      });
+      const shareUrl = `${window.location.origin}${window.location.pathname}?shareId=${docRef.id}`;
+      return shareUrl;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'shared_articles');
+      return null;
+    }
+  };
 
   // Auth listener
   useEffect(() => {
@@ -171,6 +218,10 @@ export default function App() {
     setAppState(AppState.IDLE);
     setArticleData(null);
     setUrl('');
+    if (isSharedView) {
+      setIsSharedView(false);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   };
 
   const deleteHistoryItem = async (id: string, e: React.MouseEvent) => {
@@ -237,8 +288,10 @@ export default function App() {
         onBack={handleBack} 
         user={user}
         isSaved={isSaved}
+        isSharedView={isSharedView}
         onSaveToLibrary={() => saveToLibrary(articleData)}
         onRemoveFromLibrary={() => removeFromLibrary(articleData.url)}
+        onShare={() => handleShare(articleData)}
       />
     );
   }

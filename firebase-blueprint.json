@@ -27,9 +27,28 @@
         "isReadLater": { "type": "boolean", "description": "Whether it's in the Read Later list" }
       },
       "required": ["url", "title", "timestamp"]
+    },
+    "SharedArticle": {
+      "title": "Shared Article",
+      "description": "An article shared publicly",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "siteName": { "type": "string" },
+        "url": { "type": "string" },
+        "sharedBy": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["title", "content", "url", "timestamp"]
     }
   },
   "firestore": {
+    "/shared_articles/{articleId}": {
+      "schema": "SharedArticle",
+      "description": "Publicly shared articles"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile document"

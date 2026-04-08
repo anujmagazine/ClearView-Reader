@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import Markdown from 'react-markdown';
 import { ArticleData, ReaderTheme } from '../types';
-import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer, Bookmark, BookmarkCheck } from 'lucide-react';
+import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, FileSpreadsheet, Check, Loader2, Copy, Download, Printer, Bookmark, BookmarkCheck, Share2 } from 'lucide-react';
 import { askQuestionAboutArticle } from '../services/geminiService';
 import { saveArticleToSheet } from '../services/sheetService';
 import { User } from 'firebase/auth';
@@ -15,8 +15,10 @@ interface ArticleViewProps {
   onBack: () => void;
   user: User | null;
   isSaved: boolean;
+  isSharedView?: boolean;
   onSaveToLibrary: () => void;
   onRemoveFromLibrary: () => void;
+  onShare: () => Promise<string | null>;
 }
 
 export const ArticleView: React.FC<ArticleViewProps> = ({ 
@@ -25,8 +27,10 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
   onBack, 
   user, 
   isSaved, 
+  isSharedView = false,
   onSaveToLibrary, 
-  onRemoveFromLibrary 
+  onRemoveFromLibrary,
+  onShare
 }) => {
   const [showChat, setShowChat] = useState(false);
   const [question, setQuestion] = useState('');
@@ -37,6 +41,9 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
 
   const articleRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +96,23 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
 
   const handleNativePrint = () => {
     window.print();
+  };
+
+  const handleShare = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    const url = await onShare();
+    if (url) {
+      setShareUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 3000);
+      } catch (err) {
+        console.error("Failed to copy share URL", err);
+      }
+    }
+    setIsSharing(false);
   };
 
   const handleExportPDF = async () => {
@@ -156,6 +180,16 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
           </button>
           
           <div className="flex items-center space-x-1">
+             {user && !isSharedView && (
+               <button 
+                 onClick={handleShare}
+                 disabled={isSharing}
+                 className={`p-2 rounded-lg transition-colors ${shareSuccess ? 'text-green-500' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}
+                 title="Share Public Link"
+               >
+                  {isSharing ? <Loader2 size={20} className="animate-spin" /> : shareSuccess ? <Check size={20} /> : <Share2 size={20} />}
+               </button>
+             )}
              {user && (
                <button 
                  onClick={isSaved ? onRemoveFromLibrary : onSaveToLibrary} 
@@ -188,6 +222,12 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
         <div ref={articleRef} className="pdf-source">
             {/* Header Content */}
             <header className="mb-12 border-b border-gray-200 dark:border-gray-800 pb-8">
+                {isSharedView && (
+                  <div className="mb-6 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 flex items-center gap-3 text-sm text-blue-700 dark:text-blue-300 print:hidden">
+                    <Share2 size={18} />
+                    <span>You are viewing a shared article. <button onClick={onBack} className="font-bold underline">Go back home</button> to read your own.</span>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-3 mb-8 print:hidden">
                     <button onClick={handleSaveToSheet} disabled={isSaving || saveSuccess} className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold transition-all bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700">
                         {isSaving ? <Loader2 size={16} className="animate-spin" /> : saveSuccess ? <Check size={16} /> : <FileSpreadsheet size={16} />}

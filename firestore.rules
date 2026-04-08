@@ -65,6 +65,14 @@ service cloud.firestore {
              data.timestamp is number;
     }
 
+    function isValidSharedArticle(data) {
+      return data.keys().hasAll(['title', 'content', 'url', 'timestamp']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.content is string && data.content.size() > 0 &&
+             data.url is string && data.url.size() > 0 &&
+             data.timestamp is number;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -72,6 +80,11 @@ service cloud.firestore {
     // Default deny
     match /{document=**} {
       allow read, write: if false;
+    }
+
+    match /shared_articles/{articleId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidSharedArticle(request.resource.data);
     }
 
     match /users/{userId} {
