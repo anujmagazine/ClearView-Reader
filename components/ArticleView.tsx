@@ -101,11 +101,20 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
   };
 
   const handleShare = async () => {
+    if (isSharing) return;
+    
     if (!user) {
-      alert("Please login to share articles publicly.");
+      // If not logged in, just share the original URL
+      try {
+        await navigator.clipboard.writeText(article.url);
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 3000);
+      } catch (err) {
+        console.error("Failed to copy URL", err);
+      }
       return;
     }
-    if (isSharing) return;
+
     setIsSharing(true);
     const url = await onShare();
     if (url) {
@@ -216,15 +225,15 @@ export const ArticleView: React.FC<ArticleViewProps> = ({
                <button 
                  onClick={handleShare}
                  disabled={isSharing}
-                 className={`p-2 rounded-lg transition-colors ${shareSuccess ? 'text-green-500' : 'hover:bg-black/5 dark:hover:bg-white/10'} ${!user ? 'opacity-40' : ''}`}
-                 title={user ? "Share Public Link" : "Login to share"}
+                 className={`p-2 rounded-lg transition-colors ${shareSuccess ? 'text-green-500' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}
+                 title={user ? "Share Public Link" : "Copy Original Link"}
                >
                   {isSharing ? <Loader2 size={20} className="animate-spin" /> : shareSuccess ? <Check size={20} /> : <Share2 size={20} />}
                </button>
              )}
              <button 
                onClick={handleSaveToggle} 
-               className={`p-2 rounded-lg transition-colors ${isSaved ? 'text-blue-600' : 'hover:bg-black/5 dark:hover:bg-white/10'} ${!user ? 'opacity-40' : ''}`}
+               className={`p-2 rounded-lg transition-colors ${isSaved ? 'text-blue-600' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}
                title={!user ? "Login to save" : isSaved ? "Remove from Read Later" : "Save for Later"}
              >
                 {isSaved ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
