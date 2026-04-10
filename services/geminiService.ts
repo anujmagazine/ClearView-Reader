@@ -12,19 +12,21 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
   // Using Pro for superior reasoning and multi-source synthesis capabilities
   const modelId = "gemini-3.1-pro-preview"; 
 
-  const prompt = `
+    const prompt = `
     ROLE: You are an expert Reading Assistance Specialist.
-    GOAL: Provide a comprehensive, high-fidelity synthesis of the article at the provided URL for accessibility purposes.
+    GOAL: Provide a 100% complete, high-fidelity, lossless reconstruction of the article at the provided URL for accessibility purposes.
     
     TARGET URL: ${url}
 
     **INSTRUCTIONS:**
-    1. RESEARCH: Use Google Search and the provided URL context to find the full content and context of the article.
-    2. SYNTHESIS: Provide a highly detailed, section-by-section synthesis of the article.
-    3. NO VERBATIM RECITATION: To comply with copyright guidelines, do NOT copy long passages verbatim. Instead, accurately paraphrase the content while maintaining all original information, data, quotes, and nuances.
-    4. STRUCTURE: Maintain the original structure, headings, and logical flow of the article.
-    5. IMAGES: Identify high-quality, relevant image URLs from the article or related search results to include in the markdown.
-    6. ACCESSIBILITY: Your goal is to make this content fully accessible and understandable for users who cannot access the original source.
+    1. RESEARCH: Use Google Search and the provided URL context to find the COMPLETE content of the article. If the target URL is paywalled, search for full-text versions, syndicated copies, or archived versions to ensure you have the entire text.
+    2. RECONSTRUCTION: Provide a highly detailed, comprehensive reconstruction. You must cover every single paragraph, argument, data point, and quote found in the original.
+    3. START AT THE BEGINNING: The reconstruction MUST start from the very first sentence of the article. Do not skip the introductory hook, the "lead-in", or any stylistic opening. VERIFY that your reconstruction includes the opening hook (e.g., "SYSTEM DESIGNED to predict...").
+    4. NO MISSES: Ensure no parts of the article are omitted. If the article is long, provide a long, detailed response (typically 800-1500 words for this publication).
+    5. LOSSLESS PARAPHRASING: To comply with copyright guidelines, do NOT copy long passages verbatim. Instead, accurately paraphrase every single sentence and paragraph while maintaining 100% of the original information, data, quotes, and nuances. 
+    6. STRUCTURE: Maintain the exact original structure, headings, and logical flow.
+    7. IMAGES: Identify high-quality, relevant image URLs from the article to include in the markdown.
+    8. ACCESSIBILITY: Your goal is to make this content fully accessible for users who cannot access the original source due to paywalls or other restrictions.
 
     **MANDATORY OUTPUT FORMAT:**
     You MUST output a YAML frontmatter block followed by the article content in Markdown.
@@ -39,12 +41,13 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
     ![Feature Image Description](Direct_Public_Image_URL)
 
-    [Full Detailed Synthesis in Markdown with subheaders and inline images]
+    [Full Detailed Reconstruction in Markdown with subheaders and inline images]
 
     **STRICT RULES:**
     - The "title" in frontmatter must be the exact original headline.
     - The first line of the body MUST be: "Source: [Title](${url})".
     - Use actual high-resolution image URLs found via search.
+    - DO NOT SUMMARIZE. RECONSTRUCT the full narrative paragraph by paragraph.
     - Start immediately with '---'. No preamble.
   `;
 
@@ -55,7 +58,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             model: modelId,
             contents: prompt,
             config: {
-                systemInstruction: "You are a specialized reading assistant. Your task is to provide the full text of articles for users with accessibility needs. Use Google Search and URL Context to find the content if the direct link is restricted.",
+                systemInstruction: "You are a specialized reading assistant. Your task is to provide a 100% complete, lossless reconstruction of articles for users with accessibility needs. You must capture every single paragraph, starting from the very first sentence. Use Google Search and URL Context to find the full content if the direct link is restricted.",
                 tools: [{ googleSearch: {} }, { urlContext: {} }],
                 // Maximize thinking for complex synthesis
                 thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
@@ -77,15 +80,15 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
     let candidate = response.candidates?.[0];
     
     // If we hit a recitation block, try one more time with an even stricter synthesis prompt
-    if (candidate && candidate.finishReason === 'RECITATION') {
-        console.warn("Recitation block detected, retrying with strict synthesis prompt...");
-        const strictSynthesisPrompt = prompt + "\n\nCRITICAL: You hit a copyright recitation block. You MUST NOT use verbatim text. Provide a 100% original synthesis and explanation of the article's content, data, and arguments in your own words. Do not copy any sentences directly.";
+        if (candidate && candidate.finishReason === 'RECITATION') {
+        console.warn("Recitation block detected, retrying with strict reconstruction prompt...");
+        const strictReconstructionPrompt = prompt + "\n\nCRITICAL: You hit a copyright recitation block. You MUST NOT use verbatim text. Provide a 100% original, lossless reconstruction of the article's content, data, and arguments in your own words. Do not copy any sentences directly, but ensure every single detail and paragraph is captured, starting from the very first sentence.";
         
         response = await ai.models.generateContent({
             model: "gemini-3.1-pro-preview",
-            contents: strictSynthesisPrompt,
+            contents: strictReconstructionPrompt,
             config: {
-                systemInstruction: "You are a specialized reading assistant. Provide a 100% original synthesis of the article to avoid copyright blocks. Do not use verbatim text.",
+                systemInstruction: "You are a specialized reading assistant. Provide a 100% original, lossless reconstruction of the article to avoid copyright blocks. Do not use verbatim text, but capture every single detail and paragraph starting from the very first sentence.",
                 tools: [{ googleSearch: {} }, { urlContext: {} }],
                 thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
             },
