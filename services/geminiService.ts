@@ -9,10 +9,10 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
  * Uses Pro model for better extraction of paywalled content and images.
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
-  // Using Pro for superior reasoning and multi-source synthesis capabilities
-  const modelId = "gemini-3.1-pro-preview"; 
+  // Using Flash for high-speed reconstruction while maintaining good quality
+  const modelId = "gemini-3-flash-preview"; 
 
-    const prompt = `
+  const prompt = `
     ROLE: You are an expert Reading Assistance Specialist.
     GOAL: Provide a 100% complete, high-fidelity, lossless reconstruction of the article at the provided URL for accessibility purposes.
     
@@ -60,17 +60,17 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             config: {
                 systemInstruction: "You are a specialized reading assistant. Your task is to provide a 100% complete, lossless reconstruction of articles for users with accessibility needs. You must capture every single paragraph, starting from the very first sentence. Use Google Search and URL Context to find the full content if the direct link is restricted.",
                 tools: [{ googleSearch: {} }, { urlContext: {} }],
-                // Maximize thinking for complex synthesis
-                thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+                // Using ThinkingLevel.LOW to prioritize speed while still allowing some reasoning
+                thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
             },
         });
-    } catch (proError) {
-        console.warn("Pro model failed, falling back to Flash:", proError);
+    } catch (primaryError) {
+        console.warn("Primary model failed, falling back to Flash Latest:", primaryError);
         response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-flash-latest",
             contents: prompt,
             config: {
-                systemInstruction: "You are a specialized reading assistant. Your task is to provide the full text of articles for users with accessibility needs.",
+                systemInstruction: "You are a specialized reading assistant. Your task is to provide a 100% complete, lossless reconstruction of articles for users with accessibility needs.",
                 tools: [{ googleSearch: {} }, { urlContext: {} }]
             },
         });
