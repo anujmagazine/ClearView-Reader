@@ -9,24 +9,23 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
  * Uses Pro model for better extraction of paywalled content and images.
  */
 export const fetchArticleContent = async (url: string): Promise<ArticleData> => {
-  // Using Flash for high-speed reconstruction while maintaining good quality
-  const modelId = "gemini-3-flash-preview"; 
+  // Using Pro for superior reasoning and 1:1 verbatim extraction capabilities
+  const modelId = "gemini-3.1-pro-preview"; 
 
   const prompt = `
     ROLE: You are an expert Reading Assistance Specialist.
-    GOAL: Provide a 100% complete, high-fidelity, lossless reconstruction of the article at the provided URL for accessibility purposes.
+    GOAL: Provide a 100% complete, exact verbatim extraction of the article at the provided URL for accessibility purposes.
     
     TARGET URL: ${url}
 
     **INSTRUCTIONS:**
     1. RESEARCH: Use Google Search and the provided URL context to find the COMPLETE content of the article. If the target URL is paywalled, search for full-text versions, syndicated copies, or archived versions to ensure you have the entire text.
-    2. RECONSTRUCTION: Provide a highly detailed, comprehensive reconstruction. You must cover every single paragraph, argument, data point, and quote found in the original.
-    3. START AT THE BEGINNING: The reconstruction MUST start from the very first sentence of the article. Do not skip the introductory hook, the "lead-in", or any stylistic opening. VERIFY that your reconstruction includes the opening hook (e.g., "SYSTEM DESIGNED to predict...").
-    4. NO MISSES: Ensure no parts of the article are omitted. If the article is long, provide a long, detailed response (typically 800-1500 words for this publication).
-    5. LOSSLESS PARAPHRASING: To comply with copyright guidelines, do NOT copy long passages verbatim. Instead, accurately paraphrase every single sentence and paragraph while maintaining 100% of the original information, data, quotes, and nuances. 
-    6. STRUCTURE: Maintain the exact original structure, headings, and logical flow.
-    7. IMAGES: Identify high-quality, relevant image URLs from the article to include in the markdown.
-    8. ACCESSIBILITY: Your goal is to make this content fully accessible for users who cannot access the original source due to paywalls or other restrictions.
+    2. VERBATIM EXTRACTION: Extract the text exactly as it appears. Do not summarize, do not paraphrase, and do not change the tone, vocabulary, or word order. Your goal is to provide a 1:1 reading experience for users with accessibility needs.
+    3. START AT THE BEGINNING: The extraction MUST start from the very first sentence of the article. Do not skip the title, subheadings, or the introductory hook.
+    4. NO MISSES: Ensure no paragraphs or sections are omitted. If the article is long, provide a long, detailed response that captures everything.
+    5. STRUCTURE: Maintain the exact original structure, headings, and logical flow.
+    6. IMAGES: Identify high-quality, relevant image URLs from the article to include in the markdown.
+    7. ACCESSIBILITY: Your goal is to make this content fully accessible for users who cannot access the original source due to paywalls or other restrictions.
 
     **MANDATORY OUTPUT FORMAT:**
     You MUST output a YAML frontmatter block followed by the article content in Markdown.
@@ -41,13 +40,13 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
 
     ![Feature Image Description](Direct_Public_Image_URL)
 
-    [Full Detailed Reconstruction in Markdown with subheaders and inline images]
+    [Full 1:1 Extraction in Markdown with original headers and inline images]
 
     **STRICT RULES:**
     - The "title" in frontmatter must be the exact original headline.
     - The first line of the body MUST be: "Source: [Title](${url})".
     - Use actual high-resolution image URLs found via search.
-    - DO NOT SUMMARIZE. RECONSTRUCT the full narrative paragraph by paragraph.
+    - DO NOT SUMMARIZE OR PARAPHRASE. EXTRACT EXACTLY.
     - Start immediately with '---'. No preamble.
   `;
 
@@ -58,10 +57,10 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             model: modelId,
             contents: prompt,
             config: {
-                systemInstruction: "You are a specialized reading assistant. Your task is to provide a 100% complete, lossless reconstruction of articles for users with accessibility needs. You must capture every single paragraph, starting from the very first sentence. Use Google Search and URL Context to find the full content if the direct link is restricted.",
+                systemInstruction: "You are a specialized reading assistant. Your task is to extract the FULL text of articles exactly as written for users with accessibility needs. You MUST capture every single sentence and paragraph from the source without making any changes to the text. Use Google Search and URL Context to find the full content if the direct link is restricted.",
                 tools: [{ googleSearch: {} }, { urlContext: {} }],
-                // Using ThinkingLevel.LOW to prioritize speed while still allowing some reasoning
-                thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+                // Maximize thinking for complex extraction
+                thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
             },
         });
     } catch (primaryError) {
@@ -70,7 +69,7 @@ export const fetchArticleContent = async (url: string): Promise<ArticleData> => 
             model: "gemini-flash-latest",
             contents: prompt,
             config: {
-                systemInstruction: "You are a specialized reading assistant. Your task is to provide a 100% complete, lossless reconstruction of articles for users with accessibility needs.",
+                systemInstruction: "You are a specialized reading assistant. Your task is to provide an exact 1:1 extraction of articles for users with accessibility needs.",
                 tools: [{ googleSearch: {} }, { urlContext: {} }]
             },
         });
